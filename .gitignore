@@ -1,3 +1,6 @@
+# =====================
+# Java / Maven / IDE
+# =====================
 HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
@@ -31,3 +34,16 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# =====================
+# Node.js / Frontend
+# =====================
+# Node modules
+frontend/node_modules/
+
+# Build outputs
+frontend/dist/
+frontend/build/
+
+# Environment variables
+frontend/.env
