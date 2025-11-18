@@ -23,14 +23,14 @@ public class AttendanceLogEntity {
     @JoinColumn(name = "userID", nullable = false)
     private UserEntity user;
 
-    @Column(nullable = false)
-    private LocalDateTime start_time;
+    @Column(name = "start_time", nullable = false)
+    private LocalDateTime startTime;
 
     @Column(nullable = false)
     private String status;
 
-    @Column
-    private Integer re_entry;
+    @Column(name = "re_entry")
+    private Integer reEntry;
 
     // Getters and Setters
     public Long getLogID() {
@@ -65,12 +65,12 @@ public class AttendanceLogEntity {
         this.user = user;
     }
 
-    public LocalDateTime getStart_time() {
-        return start_time;
+    public LocalDateTime getStartTime() {
+        return startTime;
     }
 
-    public void setStart_time(LocalDateTime start_time) {
-        this.start_time = start_time;
+    public void setStartTime(LocalDateTime startTime) {
+        this.startTime = startTime;
     }
 
     public String getStatus() {
@@ -81,11 +81,11 @@ public class AttendanceLogEntity {
         this.status = status;
     }
 
-    public Integer getRe_entry() {
-        return re_entry;
+    public Integer getReEntry() {
+        return reEntry;
     }
 
-    public void setRe_entry(Integer re_entry) {
-        this.re_entry = re_entry;
+    public void setReEntry(Integer reEntry) {
+        this.reEntry = reEntry;
     }
 }

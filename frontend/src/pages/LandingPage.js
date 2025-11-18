@@ -38,15 +38,6 @@ const LandingPage = () => {
     }
   ];
 
-  const benefits = [
-    "Secure digital tickets with unique QR codes",
-    "Real-time attendance tracking",
-    "Fraud prevention and security",
-    "Mobile-friendly interface",
-    "Comprehensive analytics",
-    "Easy event management"
-  ];
-
   const userTypes = [
     {
       icon: Users,

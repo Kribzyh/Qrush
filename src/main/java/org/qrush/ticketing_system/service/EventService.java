@@ -33,11 +33,14 @@ public class EventService {
             event.setName(updatedEvent.getName());
             event.setLocation(updatedEvent.getLocation());
             event.setCategory(updatedEvent.getCategory());
-            event.setStart_date(updatedEvent.getStart_date());
-            event.setEnd_date(updatedEvent.getEnd_date());
-            event.setTicket_price(updatedEvent.getTicket_price());
+            event.setStartDate(updatedEvent.getStartDate());
+            event.setEndDate(updatedEvent.getEndDate());
+            event.setTicketPrice(updatedEvent.getTicketPrice());
             event.setCapacity(updatedEvent.getCapacity());
             event.setOrganizer(updatedEvent.getOrganizer());
+            event.setOrganizerDisplayName(updatedEvent.getOrganizerDisplayName());
+            event.setOrganizerEmail(updatedEvent.getOrganizerEmail());
+            event.setOrganizerPhone(updatedEvent.getOrganizerPhone());
             event.setDescription(updatedEvent.getDescription());
             return eventRepository.save(event);
         }).orElseThrow(() -> new RuntimeException("Event not found with ID: " + id));

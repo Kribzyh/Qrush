@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -17,57 +17,94 @@ import {
   Settings,
   Download
 } from 'lucide-react';
+import { apiService } from '../services/api';
+import { toast } from 'sonner';
+
+const ORGANIZER_PROFILE_STORAGE_KEY = 'qrush_organizer_profile';
 
 const OrganizerDashboard = () => {
   const { user } = useAuth();
-  const [events, setEvents] = useState([]);
-  const [stats, setStats] = useState({});
+  const [dashboard, setDashboard] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('events');
+  const [profileForm, setProfileForm] = useState({
+    organizationName: '',
+    email: '',
+    contactNumber: '',
+  });
+  const [defaultsForm, setDefaultsForm] = useState({
+    location: '',
+    price: ''
+  });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [defaultsSaving, setDefaultsSaving] = useState(false);
+  const navigate = useNavigate();
+
+  const loadStoredProfile = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(ORGANIZER_PROFILE_STORAGE_KEY);
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw);
+      if (parsed?.userId && user?.id && parsed.userId !== user.id) {
+        return null;
+      }
+      return parsed;
+    } catch (parseError) {
+      console.warn('Unable to parse stored profile settings', parseError);
+      return null;
+    }
+  }, [user?.id]);
+
+  const loadStoredDefaults = useCallback(() => {
+    try {
+      const raw = localStorage.getItem('qrush_organizer_defaults');
+      return raw ? JSON.parse(raw) : null;
+    } catch (parseError) {
+      console.warn('Unable to parse stored organizer defaults', parseError);
+      return null;
+    }
+  }, []);
+
+  const fetchDashboard = useCallback(async () => {
+    if (!user?.id) {
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await apiService.getOrganizerDashboard(user.id);
+      setDashboard(data);
+
+      const storedProfile = loadStoredProfile();
+      const storedDefaults = loadStoredDefaults();
+
+      setProfileForm({
+        organizationName: (storedProfile?.organizationName ?? user.name ?? '').trim(),
+        email: (storedProfile?.email ?? user.email ?? '').trim(),
+        contactNumber: typeof storedProfile?.contactNumber === 'string'
+          ? storedProfile.contactNumber.trim()
+          : '',
+      });
+
+      setDefaultsForm({
+        location: storedDefaults?.location ?? '',
+        price: storedDefaults?.price ?? '',
+      });
+    } catch (err) {
+      console.error('Failed to load organizer dashboard', err);
+      setError(err.message);
+      toast.error('Unable to load organizer insights.');
+    } finally {
+      setLoading(false);
+    }
+  }, [loadStoredDefaults, loadStoredProfile, user?.email, user?.id, user?.name]);
 
   useEffect(() => {
-    // Mock data for organizer dashboard
-    const mockEvents = [
-      {
-        id: 1,
-        title: "Tech Conference 2024",
-        date: "2024-03-15",
-        status: "published",
-        ticketsSold: 387,
-        capacity: 500,
-        revenue: 115413,
-        views: 2450
-      },
-      {
-        id: 2,
-        title: "Summer Music Festival",
-        date: "2024-06-20",
-        status: "published",
-        ticketsSold: 1650,
-        capacity: 2000,
-        revenue: 247500,
-        views: 8920
-      },
-      {
-        id: 3,
-        title: "Business Workshop",
-        date: "2024-04-10",
-        status: "draft",
-        ticketsSold: 0,
-        capacity: 100,
-        revenue: 0,
-        views: 0
-      }
-    ];
-
-    const mockStats = {
-      totalEvents: mockEvents.length,
-      totalTicketsSold: mockEvents.reduce((sum, event) => sum + event.ticketsSold, 0),
-      totalRevenue: mockEvents.reduce((sum, event) => sum + event.revenue, 0),
-      averageAttendance: Math.round(mockEvents.reduce((sum, event) => sum + (event.ticketsSold / event.capacity * 100), 0) / mockEvents.length)
-    };
-
-    setEvents(mockEvents);
-    setStats(mockStats);
-  }, []);
+    fetchDashboard();
+  }, [fetchDashboard]);
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-PH', {
@@ -77,6 +114,9 @@ const OrganizerDashboard = () => {
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) {
+      return 'TBD';
+    }
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { 
       month: 'short', 
@@ -95,7 +135,188 @@ const OrganizerDashboard = () => {
   };
 
   const getAttendancePercentage = (sold, capacity) => {
-    return Math.round((sold / capacity) * 100);
+    if (!capacity) {
+      return 0;
+    }
+    const ratio = Math.min(Math.max(sold / capacity, 0), 1);
+    return Math.round(ratio * 100);
+  };
+
+  const publishedEvents = useMemo(
+    () => (dashboard?.events ?? []).filter((event) => event.status === 'published'),
+    [dashboard?.events]
+  );
+
+  const handleViewEvent = (eventId) => {
+    if (!eventId) return;
+    navigate(`/events/${eventId}`);
+  };
+
+  const handleEditEvent = (eventId) => {
+    if (!eventId) return;
+    navigate(`/create-event/${eventId}`);
+  };
+
+  const handleEventSettings = (event) => {
+    if (!event) return;
+    setDefaultsForm((prev) => ({
+      location: event.location || prev.location,
+      price: event.ticketPrice != null
+        ? String(event.ticketPrice)
+        : event.price != null
+          ? String(event.price)
+          : prev.price || '',
+    }));
+    setActiveTab('settings');
+    toast.info(`Settings prefilled with details from ${event.title}.`);
+  };
+
+  const handleDownloadReport = (type) => {
+    const rows = (dashboard?.events ?? []).map((event) => ({
+      Title: event.title,
+      Status: event.status,
+      Date: formatDate(event.eventStart),
+      Capacity: event.capacity ?? 0,
+      TicketsSold: event.ticketsSold ?? 0,
+      Revenue: formatCurrency(event.revenue ?? 0),
+      Views: (event.views ?? 0).toLocaleString(),
+    }));
+
+    const csvHeader = Object.keys(rows[0] || { Title: '', Status: '', Date: '', Capacity: '', TicketsSold: '', Revenue: '', Views: '' });
+    const csvBody = [csvHeader.join(','), ...rows.map((row) => csvHeader.map((key) => JSON.stringify(row[key] ?? '')).join(','))].join('\n');
+
+    const blob = new Blob([csvBody], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${type}_report.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`${type.replace('-', ' ')} exported.`);
+  };
+
+  const handleProfileSubmit = async (event) => {
+    event.preventDefault();
+    const trimmedProfile = {
+      organizationName: profileForm.organizationName?.trim() || user.name || '',
+      email: profileForm.email?.trim() || user.email || '',
+      contactNumber: profileForm.contactNumber?.trim() || '',
+    };
+    try {
+      setProfileSaving(true);
+      const storedPayload = {
+        ...trimmedProfile,
+        userId: user?.id ?? null,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(ORGANIZER_PROFILE_STORAGE_KEY, JSON.stringify(storedPayload));
+      setProfileForm({
+        organizationName: trimmedProfile.organizationName,
+        email: trimmedProfile.email,
+        contactNumber: trimmedProfile.contactNumber,
+      });
+      const eventsToUpdate = (dashboard?.events ?? [])
+        .map((eventSummary) => eventSummary.eventId)
+        .filter(Boolean);
+
+      let failedUpdates = 0;
+
+      if (eventsToUpdate.length > 0) {
+        const updateResults = await Promise.all(eventsToUpdate.map(async (eventId) => {
+          try {
+            const existing = await apiService.getEvent(eventId);
+            if (!existing) {
+              return false;
+            }
+
+            await apiService.updateEvent(eventId, {
+              name: existing.name,
+              location: existing.location,
+              category: existing.category,
+              startDate: existing.startDate,
+              endDate: existing.endDate,
+              ticketPrice: existing.ticketPrice,
+              capacity: existing.capacity,
+              organizer: existing.organizer ?? trimmedProfile.organizationName,
+              organizerDisplayName: trimmedProfile.organizationName,
+              organizerEmail: trimmedProfile.email,
+              organizerPhone: trimmedProfile.contactNumber,
+              description: existing.description ?? '',
+            });
+
+            return true;
+          } catch (updateError) {
+            console.error(`Failed to propagate organizer profile to event ${eventId}`, updateError);
+            return false;
+          }
+        }));
+
+        failedUpdates = updateResults.filter((result) => !result).length;
+      }
+
+      if (failedUpdates > 0) {
+        toast.warning('Profile saved, but some events could not be updated. Please retry later.');
+      } else {
+        toast.success('Profile and event details updated.');
+      }
+
+      await fetchDashboard();
+    } catch (err) {
+      console.error('Failed to store profile settings', err);
+      toast.error('Unable to update profile right now.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleDefaultsSubmit = async (event) => {
+    event.preventDefault();
+    try {
+      setDefaultsSaving(true);
+      localStorage.setItem('qrush_organizer_defaults', JSON.stringify(defaultsForm));
+      toast.success('Default event settings saved.');
+    } catch (err) {
+      console.error('Failed to store default settings', err);
+      toast.error('Unable to save defaults right now.');
+    } finally {
+      setDefaultsSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading organizer overview...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !dashboard) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Dashboard unavailable</h2>
+          <p className="text-gray-600 mb-4">{error || 'We could not retrieve your event metrics right now.'}</p>
+          <Button onClick={() => window.location.reload()} className="gradient-orange text-white">
+            Refresh
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const events = dashboard.events ?? [];
+  const stats = {
+    totalEvents: dashboard.totalEvents ?? 0,
+    totalTicketsSold: dashboard.totalTicketsSold ?? 0,
+    totalRevenue: dashboard.totalRevenue ?? 0,
+    averageAttendance: dashboard.averageAttendance ?? 0,
   };
 
   return (
@@ -108,7 +329,7 @@ const OrganizerDashboard = () => {
               Organizer Dashboard
             </h1>
             <p className="text-xl text-gray-600">
-              Welcome back, {user.name}. Manage your events and track performance.
+              Welcome back, {profileForm.organizationName || user.name}. Manage your events and track performance.
             </p>
           </div>
           <Link to="/create-event">
@@ -181,7 +402,7 @@ const OrganizerDashboard = () => {
         </div>
 
         {/* Main Content */}
-        <Tabs defaultValue="events" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-3 max-w-md">
             <TabsTrigger value="events">My Events</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
@@ -202,7 +423,7 @@ const OrganizerDashboard = () => {
 
             <div className="space-y-4">
               {events.map((event) => (
-                <Card key={event.id} className="event-card">
+                <Card key={event.eventId} className="event-card">
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -219,7 +440,7 @@ const OrganizerDashboard = () => {
                           <div>
                             <p className="text-sm font-medium text-gray-600">Date</p>
                             <p className="text-lg font-semibold text-gray-900">
-                              {formatDate(event.date)}
+                              {formatDate(event.eventStart)}
                             </p>
                           </div>
                           
@@ -246,20 +467,20 @@ const OrganizerDashboard = () => {
                           <div>
                             <p className="text-sm font-medium text-gray-600">Views</p>
                             <p className="text-lg font-semibold text-gray-900">
-                              {event.views.toLocaleString()}
+                              {(event.views ?? 0).toLocaleString()}
                             </p>
                           </div>
                         </div>
                       </div>
                       
                       <div className="flex space-x-2 ml-6">
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" onClick={() => handleViewEvent(event.eventId)}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" onClick={() => handleEditEvent(event.eventId)}>
                           <Edit className="w-4 h-4" />
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" onClick={() => handleEventSettings(event)}>
                           <Settings className="w-4 h-4" />
                         </Button>
                       </div>
@@ -317,8 +538,8 @@ const OrganizerDashboard = () => {
               </CardHeader>
               <CardContent className="px-0">
                 <div className="space-y-4">
-                  {events.filter(e => e.status === 'published').map((event) => (
-                    <div key={event.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  {publishedEvents.map((event) => (
+                    <div key={event.eventId} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                       <div>
                         <h4 className="font-semibold text-gray-900">{event.title}</h4>
                         <p className="text-sm text-gray-600">
@@ -346,15 +567,15 @@ const OrganizerDashboard = () => {
               </CardHeader>
               <CardContent className="px-0">
                 <div className="flex space-x-4">
-                  <Button variant="outline">
+                  <Button variant="outline" onClick={() => handleDownloadReport('sales')}>
                     <Download className="w-4 h-4 mr-2" />
                     Sales Report
                   </Button>
-                  <Button variant="outline">
+                  <Button variant="outline" onClick={() => handleDownloadReport('attendee-list')}>
                     <Download className="w-4 h-4 mr-2" />
                     Attendee List
                   </Button>
-                  <Button variant="outline">
+                  <Button variant="outline" onClick={() => handleDownloadReport('analytics-summary')}>
                     <Download className="w-4 h-4 mr-2" />
                     Analytics Summary
                   </Button>
@@ -373,29 +594,44 @@ const OrganizerDashboard = () => {
                   <CardTitle>Profile Information</CardTitle>
                 </CardHeader>
                 <CardContent className="px-0 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Organization Name
-                    </label>
-                    <input 
-                      type="text" 
-                      className="w-full p-2 border border-gray-300 rounded-lg"
-                      placeholder={user.name}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email
-                    </label>
-                    <input 
-                      type="email" 
-                      className="w-full p-2 border border-gray-300 rounded-lg"
-                      placeholder={user.email}
-                    />
-                  </div>
-                  <Button className="gradient-orange text-white">
-                    Update Profile
-                  </Button>
+                  <form className="space-y-4" onSubmit={handleProfileSubmit}>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Organization Name
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border border-gray-300 rounded-lg"
+                        value={profileForm.organizationName}
+                        onChange={(event) => setProfileForm((prev) => ({ ...prev, organizationName: event.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        className="w-full p-2 border border-gray-300 rounded-lg"
+                        value={profileForm.email}
+                        onChange={(event) => setProfileForm((prev) => ({ ...prev, email: event.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Contact Number
+                      </label>
+                      <input
+                        type="tel"
+                        className="w-full p-2 border border-gray-300 rounded-lg"
+                        value={profileForm.contactNumber}
+                        onChange={(event) => setProfileForm((prev) => ({ ...prev, contactNumber: event.target.value }))}
+                      />
+                    </div>
+                    <Button className="gradient-orange text-white" type="submit" disabled={profileSaving}>
+                      {profileSaving ? 'Saving...' : 'Update Profile'}
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
 
@@ -404,29 +640,33 @@ const OrganizerDashboard = () => {
                   <CardTitle>Event Defaults</CardTitle>
                 </CardHeader>
                 <CardContent className="px-0 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Default Event Location
-                    </label>
-                    <input 
-                      type="text" 
-                      className="w-full p-2 border border-gray-300 rounded-lg"
-                      placeholder="Enter default location"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Default Ticket Price
-                    </label>
-                    <input 
-                      type="number" 
-                      className="w-full p-2 border border-gray-300 rounded-lg"
-                      placeholder="0"
-                    />
-                  </div>
-                  <Button className="gradient-orange text-white">
-                    Save Defaults
-                  </Button>
+                  <form className="space-y-4" onSubmit={handleDefaultsSubmit}>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Default Event Location
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full p-2 border border-gray-300 rounded-lg"
+                        value={defaultsForm.location}
+                        onChange={(event) => setDefaultsForm((prev) => ({ ...prev, location: event.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Default Ticket Price
+                      </label>
+                      <input
+                        type="number"
+                        className="w-full p-2 border border-gray-300 rounded-lg"
+                        value={defaultsForm.price}
+                        onChange={(event) => setDefaultsForm((prev) => ({ ...prev, price: event.target.value }))}
+                      />
+                    </div>
+                    <Button className="gradient-orange text-white" type="submit" disabled={defaultsSaving}>
+                      {defaultsSaving ? 'Saving...' : 'Save Defaults'}
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
             </div>

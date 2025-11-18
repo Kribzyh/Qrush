@@ -8,25 +8,25 @@ public class RoleEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long roleId;
+    private Long roleID;
 
     private String roleName;
 
     // Constructors
     public RoleEntity() {}
 
-    public RoleEntity(Long roleId, String roleName) {
-        this.roleId = roleId;
+    public RoleEntity(Long roleID, String roleName) {
+        this.roleID = roleID;
         this.roleName = roleName;
     }
 
     // Getters and Setters
-    public Long getRoleId() {
-        return roleId;
+    public Long getRoleID() {
+        return roleID;
     }
 
-    public void setRoleId(Long roleId) {
-        this.roleId = roleId;
+    public void setRoleID(Long roleID) {
+        this.roleID = roleID;
     }
 
     public String getRoleName() {

@@ -1,0 +1,12 @@
+{
+  "eventID": 1,
+  "name": "Tech Conference 2024",
+  "location": "San Francisco Convention Center",
+  "category": "technology",
+  "startDate": "2024-03-15T09:00:00",
+  "endDate": "2024-03-15T18:00:00",
+  "ticketPrice": 299.99,
+  "capacity": 500,
+  "organizer": "TechEvents Inc.",
+  "description": "Join us for the most anticipated technology conference of the year!"
+}

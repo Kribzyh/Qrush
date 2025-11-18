@@ -22,35 +22,36 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 
+const NavLink = ({ to, children, className = "", onClick }) => {
+  const location = useLocation();
+  const isActive = location.pathname === to;
+  return (
+    <Link
+      to={to}
+      className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+        isActive 
+          ? 'bg-orange-100 text-orange-600' 
+          : 'text-gray-700 hover:text-orange-600 hover:bg-orange-50'
+      } ${className}`}
+      onClick={onClick}
+    >
+      {children}
+    </Link>
+  );
+};
+
 const Navbar = () => {
   const { user, logout, isAuthenticated } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const location = useLocation();
   const navigate = useNavigate();
+  const defaultRoute = isAuthenticated ? '/dashboard' : '/auth';
 
   const handleLogout = () => {
     logout();
     navigate('/');
   };
 
-  const NavLink = ({ to, children, className = "" }) => {
-    const isActive = location.pathname === to;
-    return (
-      <Link
-        to={to}
-        className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-          isActive 
-            ? 'bg-orange-100 text-orange-600' 
-            : 'text-gray-700 hover:text-orange-600 hover:bg-orange-50'
-        } ${className}`}
-        onClick={() => setIsMobileMenuOpen(false)}
-      >
-        {children}
-      </Link>
-    );
-  };
-
-  const getUserMenuItems = () => {
+  const getUserMenuItems = React.useCallback(() => {
     if (!user) return [];
     
     const commonItems = [
@@ -74,14 +75,14 @@ const Navbar = () => {
     };
 
     return [...(roleSpecificItems[user.role] || []), ...commonItems];
-  };
+  }, [user, navigate]);
 
   return (
     <nav className="bg-white shadow-lg border-b border-gray-100 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
-          <Link to="/" className="flex items-center space-x-3">
+          <Link to={defaultRoute} className="flex items-center space-x-3">
             <div className="w-10 h-10 gradient-orange rounded-lg flex items-center justify-center">
               <QrCode className="w-6 h-6 text-white" />
             </div>
@@ -92,11 +93,10 @@ const Navbar = () => {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-1">
-            <NavLink to="/">Home</NavLink>
-            <NavLink to="/events">Events</NavLink>
+            <NavLink to="/events" onClick={() => setIsMobileMenuOpen(false)}>Events</NavLink>
             
             {isAuthenticated && (
-              <NavLink to="/dashboard">Dashboard</NavLink>
+              <NavLink to="/dashboard" onClick={() => setIsMobileMenuOpen(false)}>Dashboard</NavLink>
             )}
           </div>
 
@@ -165,6 +165,7 @@ const Navbar = () => {
               variant="ghost"
               size="sm"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
             >
               {isMobileMenuOpen ? (
                 <X className="w-6 h-6 text-gray-700" />
@@ -179,7 +180,6 @@ const Navbar = () => {
         {isMobileMenuOpen && (
           <div className="md:hidden bg-white border-t border-gray-100 py-4">
             <div className="flex flex-col space-y-2">
-              <NavLink to="/" className="block">Home</NavLink>
               <NavLink to="/events" className="block">Events</NavLink>
               
               {isAuthenticated && (

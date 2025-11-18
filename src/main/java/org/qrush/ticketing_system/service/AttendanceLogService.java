@@ -33,9 +33,9 @@ public class AttendanceLogService {
             log.setTicket(updatedLog.getTicket());
             log.setEvent(updatedLog.getEvent());
             log.setUser(updatedLog.getUser());
-            log.setStart_time(updatedLog.getStart_time());
+            log.setStartTime(updatedLog.getStartTime());
             log.setStatus(updatedLog.getStatus());
-            log.setRe_entry(updatedLog.getRe_entry());
+            log.setReEntry(updatedLog.getReEntry());
             return attendanceLogRepository.save(log);
         }).orElseThrow(() -> new RuntimeException("Log not found with ID: " + id));
     }

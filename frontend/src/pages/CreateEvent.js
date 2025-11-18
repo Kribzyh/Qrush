@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../App';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -18,11 +17,21 @@ import {
   Eye
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '../App';
+import { apiService } from '../services/api';
 
 const CreateEvent = () => {
-  const { user } = useAuth();
   const navigate = useNavigate();
+  const { eventId } = useParams();
+  const { user } = useAuth();
+  const isEditMode = Boolean(eventId);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(isEditMode);
+  const [organizerProfile, setOrganizerProfile] = useState({
+    organizationName: user?.name || '',
+    email: user?.email || '',
+    contactNumber: '',
+  });
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -37,6 +46,127 @@ const CreateEvent = () => {
     capacity: 100,
     image: ''
   });
+
+  const parseStoredOrganizerProfile = useCallback(() => {
+    try {
+      const rawValue = localStorage.getItem('qrush_organizer_profile');
+      if (!rawValue) {
+        return null;
+      }
+      const parsed = JSON.parse(rawValue);
+      if (parsed?.userId && user?.id && parsed.userId !== user.id) {
+        return null;
+      }
+      return parsed;
+    } catch (storageError) {
+      console.warn('Unable to parse stored organizer profile', storageError);
+      return null;
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (isEditMode) {
+      return;
+    }
+    const storedProfile = parseStoredOrganizerProfile();
+    if (storedProfile) {
+      setOrganizerProfile({
+        organizationName: storedProfile.organizationName ?? user?.name ?? '',
+        email: storedProfile.email ?? user?.email ?? '',
+        contactNumber: storedProfile.contactNumber ?? '',
+      });
+    }
+
+    try {
+      const storedDefaults = localStorage.getItem('qrush_organizer_defaults');
+      if (storedDefaults) {
+        const parsedDefaults = JSON.parse(storedDefaults);
+        setFormData((prev) => ({
+          ...prev,
+          location: parsedDefaults.location ?? prev.location,
+          price: parsedDefaults.price ?? prev.price,
+        }));
+      }
+    } catch (err) {
+      console.warn('Unable to load organizer default event settings', err);
+    }
+  }, [isEditMode, parseStoredOrganizerProfile, user?.email, user?.id, user?.name]);
+
+  useEffect(() => {
+    if (!isEditMode) {
+      return;
+    }
+
+    const toDateInput = (value) => {
+      if (!value) return '';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      const pad = (num) => String(num).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    };
+
+    const toTimeInput = (value) => {
+      if (!value) return '';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      const pad = (num) => String(num).padStart(2, '0');
+      return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    };
+
+    const storedProfile = parseStoredOrganizerProfile();
+
+    const loadEvent = async () => {
+      try {
+        setIsInitializing(true);
+        const data = await apiService.getEvent(eventId);
+        if (!data) {
+          toast.error('We could not find the event you want to edit.');
+          navigate('/dashboard');
+          return;
+        }
+
+        const segments = (data.description || '')
+          .split('\n\n')
+          .map((segment) => segment.trim())
+          .filter(Boolean);
+
+        const shortDescription = segments[0] || '';
+        const address = segments.length > 1 ? segments[segments.length - 1] : '';
+        const detailedSegments = segments.length > 2 ? segments.slice(1, -1) : [];
+        const detailedDescription = detailedSegments.join('\n\n');
+
+        setFormData((prev) => ({
+          ...prev,
+          title: data.name || '',
+          description: shortDescription,
+          fullDescription: detailedDescription,
+          date: toDateInput(data.startDate),
+          time: toTimeInput(data.startDate),
+          endTime: toTimeInput(data.endDate),
+          location: data.location || '',
+          address,
+          category: data.category || prev.category,
+          price: data.ticketPrice != null ? String(data.ticketPrice) : prev.price,
+          capacity: data.capacity != null ? String(data.capacity) : prev.capacity,
+          image: data.image || '',
+        }));
+
+        setOrganizerProfile({
+          organizationName: storedProfile?.organizationName ?? data.organizerDisplayName ?? data.organizer ?? user?.name ?? '',
+          email: storedProfile?.email ?? data.organizerEmail ?? user?.email ?? '',
+          contactNumber: storedProfile?.contactNumber ?? data.organizerPhone ?? '',
+        });
+      } catch (err) {
+        console.error('Failed to load event for editing', err);
+        toast.error('Failed to load event details.');
+        navigate('/dashboard');
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+
+    loadEvent();
+  }, [eventId, isEditMode, navigate, parseStoredOrganizerProfile, user?.email, user?.id, user?.name]);
 
   const categories = [
     { value: 'technology', label: 'Technology' },
@@ -62,36 +192,76 @@ const CreateEvent = () => {
     setIsLoading(true);
 
     // Basic validation
-    if (!formData.title || !formData.date || !formData.location) {
+    if (!formData.title || !formData.date || !formData.time || !formData.location || !formData.capacity) {
       toast.error('Please fill in all required fields');
       setIsLoading(false);
       return;
     }
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    if (!user) {
+      toast.error('You must be signed in to create an event');
+      setIsLoading(false);
+      return;
+    }
 
-    const eventData = {
-      ...formData,
-      id: Date.now(),
+    if (saveAsDraft) {
+      toast.info(isEditMode ? 'Draft saving is not available while editing an event.' : 'Draft saving is not available yet. Publish the event to store it.');
+      setIsLoading(false);
+      return;
+    }
+
+    const startDateTime = `${formData.date}T${formData.time}:00`;
+    const endTimeValue = formData.endTime || formData.time;
+    const endDateTime = `${formData.date}T${endTimeValue}:00`;
+    const combinedDescription = [formData.description, formData.fullDescription, formData.address]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const payload = {
+      name: formData.title,
+      location: formData.location,
+      category: formData.category,
+      startDate: startDateTime,
+      endDate: endDateTime,
+      ticketPrice: Number.isFinite(Number(formData.price)) ? Number(formData.price) : 0,
+      capacity: Number.isFinite(Number(formData.capacity)) ? Number(formData.capacity) : 0,
       organizer: user.name,
-      organizerId: user.id,
-      registered: 0,
-      rating: 0,
-      reviews: 0,
-      status: saveAsDraft ? 'draft' : 'published',
-      createdAt: new Date().toISOString()
+      organizerDisplayName: (organizerProfile.organizationName || user.name || '').trim(),
+      organizerEmail: (organizerProfile.email || user.email || '').trim(),
+      organizerPhone: (organizerProfile.contactNumber || '').trim(),
+      description: combinedDescription || '',
     };
 
-    toast.success(
-      saveAsDraft 
-        ? 'Event saved as draft successfully!' 
-        : 'Event published successfully!'
-    );
-
-    setIsLoading(false);
-    navigate('/dashboard');
+    try {
+      if (isEditMode) {
+        await apiService.updateEvent(eventId, payload);
+        toast.success('Event updated successfully!');
+      } else {
+        await apiService.createEvent(payload);
+        toast.success('Event published successfully!');
+      }
+      navigate('/dashboard');
+    } catch (err) {
+      console.error('Failed to create event', err);
+      toast.error(isEditMode ? 'Failed to update event. Please try again.' : 'Failed to publish event. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  const pageTitle = isEditMode ? 'Edit Event' : 'Create New Event';
+  const submitLabel = isEditMode ? 'Save Changes' : 'Publish Event';
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading event details...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -105,7 +275,7 @@ const CreateEvent = () => {
             <ArrowLeft className="w-5 h-5" />
             <span>Back to Dashboard</span>
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">Create New Event</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{pageTitle}</h1>
           <div></div>
         </div>
 
@@ -397,7 +567,7 @@ const CreateEvent = () => {
               type="button"
               variant="outline"
               onClick={(e) => handleSubmit(e, true)}
-              disabled={isLoading}
+              disabled={isLoading || isEditMode}
               className="flex-1"
             >
               {isLoading ? (
@@ -421,12 +591,12 @@ const CreateEvent = () => {
               {isLoading ? (
                 <div className="flex items-center space-x-2">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  <span>Publishing...</span>
+                  <span>{isEditMode ? 'Saving...' : 'Publishing...'}</span>
                 </div>
               ) : (
                 <>
                   <Calendar className="w-4 h-4 mr-2" />
-                  Publish Event
+                  {submitLabel}
                 </>
               )}
             </Button>
@@ -435,9 +605,9 @@ const CreateEvent = () => {
           <div className="text-center text-sm text-gray-600">
             <p>
               By publishing this event, you agree to our{' '}
-              <a href="#" className="text-orange-600 hover:underline">Terms of Service</a>
+              <button type="button" className="text-orange-600 hover:underline">Terms of Service</button>
               {' '}and{' '}
-              <a href="#" className="text-orange-600 hover:underline">Event Guidelines</a>
+              <button type="button" className="text-orange-600 hover:underline">Event Guidelines</button>
             </p>
           </div>
         </form>

@@ -20,20 +20,29 @@ public class EventEntity {
     @Column(nullable = false)
     private String category; // e.g., concert, seminar, festival
 
-    @Column(nullable = false)
-    private LocalDateTime start_date;
+    @Column(name = "start_date", nullable = false)
+    private LocalDateTime startDate;
 
-    @Column(nullable = false)
-    private LocalDateTime end_date;
+    @Column(name = "end_date", nullable = false)
+    private LocalDateTime endDate;
 
-    @Column(nullable = false)
-    private Double ticket_price;
+    @Column(name = "ticket_price", nullable = false)
+    private Double ticketPrice;
 
     @Column(nullable = false)
     private Integer capacity;
 
     @Column(nullable = false)
     private String organizer; // could reference a user in future
+
+    @Column(name = "organizer_display_name")
+    private String organizerDisplayName;
+
+    @Column(name = "organizer_email")
+    private String organizerEmail;
+
+    @Column(name = "organizer_phone")
+    private String organizerPhone;
 
     @Column(columnDefinition = "TEXT")
     private String description;
@@ -71,28 +80,28 @@ public class EventEntity {
         this.category = category;
     }
 
-    public LocalDateTime getStart_date() {
-        return start_date;
+    public LocalDateTime getStartDate() {
+        return startDate;
     }
 
-    public void setStart_date(LocalDateTime start_date) {
-        this.start_date = start_date;
+    public void setStartDate(LocalDateTime startDate) {
+        this.startDate = startDate;
     }
 
-    public LocalDateTime getEnd_date() {
-        return end_date;
+    public LocalDateTime getEndDate() {
+        return endDate;
     }
 
-    public void setEnd_date(LocalDateTime end_date) {
-        this.end_date = end_date;
+    public void setEndDate(LocalDateTime endDate) {
+        this.endDate = endDate;
     }
 
-    public Double getTicket_price() {
-        return ticket_price;
+    public Double getTicketPrice() {
+        return ticketPrice;
     }
 
-    public void setTicket_price(Double ticket_price) {
-        this.ticket_price = ticket_price;
+    public void setTicketPrice(Double ticketPrice) {
+        this.ticketPrice = ticketPrice;
     }
 
     public Integer getCapacity() {
@@ -109,6 +118,30 @@ public class EventEntity {
 
     public void setOrganizer(String organizer) {
         this.organizer = organizer;
+    }
+
+    public String getOrganizerDisplayName() {
+        return organizerDisplayName;
+    }
+
+    public void setOrganizerDisplayName(String organizerDisplayName) {
+        this.organizerDisplayName = organizerDisplayName;
+    }
+
+    public String getOrganizerEmail() {
+        return organizerEmail;
+    }
+
+    public void setOrganizerEmail(String organizerEmail) {
+        this.organizerEmail = organizerEmail;
+    }
+
+    public String getOrganizerPhone() {
+        return organizerPhone;
+    }
+
+    public void setOrganizerPhone(String organizerPhone) {
+        this.organizerPhone = organizerPhone;
     }
 
     public String getDescription() {

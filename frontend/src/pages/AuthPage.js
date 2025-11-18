@@ -28,7 +28,6 @@ const AuthPage = () => {
   const navigate = useNavigate();
 
   // Form validation state tracking
-  const [formErrors, setFormErrors] = useState({});
   const [touchedFields, setTouchedFields] = useState({});
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

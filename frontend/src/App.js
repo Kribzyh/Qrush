@@ -4,7 +4,6 @@ import './App.css';
 
 // Components
 import Navbar from './components/Navbar';
-import LandingPage from './pages/LandingPage';
 import AuthPage from './pages/AuthPage';
 import AttendeeDashboard from './pages/AttendeeDashboard';
 import OrganizerDashboard from './pages/OrganizerDashboard';
@@ -44,12 +43,12 @@ function App() {
     localStorage.removeItem('qrush_user');
   };
 
-  const authValue = {
+  const authValue = React.useMemo(() => ({
     user,
     login,
     logout,
     isAuthenticated: !!user,
-  };
+  }), [user]);
 
   if (isLoading) {
     return (
@@ -62,6 +61,8 @@ function App() {
     );
   }
 
+  const defaultRoute = user ? '/dashboard' : '/auth';
+
   return (
     <AuthContext.Provider value={authValue}>
       <Router>
@@ -69,7 +70,7 @@ function App() {
           <Navbar />
           <Routes>
             {/* Public Routes */}
-            <Route path="/" element={<LandingPage />} />
+            <Route path="/" element={<Navigate to={defaultRoute} replace />} />
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/events/:id" element={<EventDetails />} />
@@ -101,6 +102,14 @@ function App() {
               } 
             />
             <Route 
+              path="/create-event/:eventId" 
+              element={
+                user && user.role === 'organizer' ? 
+                <CreateEvent /> : 
+                <Navigate to="/dashboard" />
+              } 
+            />
+            <Route 
               path="/scan" 
               element={
                 user && user.role === 'staff' ? 
@@ -110,7 +119,7 @@ function App() {
             />
 
             {/* Catch all route */}
-            <Route path="*" element={<Navigate to="/" />} />
+            <Route path="*" element={<Navigate to={defaultRoute} replace />} />
           </Routes>
           <Toaster />
         </div>

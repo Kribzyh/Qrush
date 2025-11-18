@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../App';
 import { Button } from '../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { 
@@ -17,74 +17,44 @@ import {
   Share,
   History
 } from 'lucide-react';
+import { apiService } from '../services/api';
+import { toast } from 'sonner';
 
 const AttendeeDashboard = () => {
   const { user } = useAuth();
-  const [tickets, setTickets] = useState([]);
-  const [upcomingEvents, setUpcomingEvents] = useState([]);
-  const [pastEvents, setPastEvents] = useState([]);
+  const [dashboard, setDashboard] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Mock data for attendee dashboard
-    const mockTickets = [
-      {
-        id: 1,
-        eventId: 1,
-        eventTitle: "Tech Conference 2024",
-        eventDate: "2024-03-15",
-        eventTime: "09:00 AM",
-        location: "San Francisco Convention Center",
-        ticketNumber: "TC2024-001234",
-        qrCode: "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=TC2024-001234",
-        price: 299,
-        status: "confirmed",
-        purchaseDate: "2024-02-20"
-      },
-      {
-        id: 2,
-        eventId: 2,
-        eventTitle: "Summer Music Festival",
-        eventDate: "2024-06-20",
-        eventTime: "12:00 PM",
-        location: "Golden Gate Park",
-        ticketNumber: "SMF2024-005678",
-        qrCode: "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=SMF2024-005678",
-        price: 150,
-        status: "confirmed",
-        purchaseDate: "2024-02-15"
+    const fetchDashboard = async () => {
+      if (!user?.id) {
+        return;
       }
-    ];
-
-    const mockPastEvents = [
-      {
-        id: 3,
-        eventTitle: "Art Gallery Opening",
-        eventDate: "2024-01-15",
-        location: "Modern Art Gallery",
-        attended: true,
-        rating: 5
-      },
-      {
-        id: 4,
-        eventTitle: "Business Networking Event",
-        eventDate: "2024-01-10",
-        location: "Downtown Business Center",
-        attended: true,
-        rating: 4
+      try {
+        setLoading(true);
+        const data = await apiService.getAttendeeDashboard(user.id);
+        setDashboard(data);
+      } catch (err) {
+        console.error('Failed to load attendee dashboard', err);
+        setError(err.message);
+        toast.error('Unable to load attendee dashboard data.');
+      } finally {
+        setLoading(false);
       }
-    ];
+    };
 
-    setTickets(mockTickets);
-    setUpcomingEvents(mockTickets);
-    setPastEvents(mockPastEvents);
-  }, []);
+    fetchDashboard();
+  }, [user?.id]);
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
+    return date.toLocaleString('en-US', { 
       month: 'short', 
       day: 'numeric', 
-      year: 'numeric' 
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
     });
   };
 
@@ -94,6 +64,41 @@ const AttendeeDashboard = () => {
     const timeDiff = eventDate - now;
     const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
     return daysDiff <= 7 && daysDiff > 0;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !dashboard) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Ticket className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Dashboard unavailable</h2>
+          <p className="text-gray-600 mb-4">{error || 'We could not load your ticket information right now.'}</p>
+          <Button onClick={() => window.location.reload()} className="gradient-orange text-white">
+            Refresh
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const totalSpent = dashboard.totalSpent ?? 0;
+  const upcomingTickets = dashboard.upcomingTickets ?? [];
+  const pastEvents = dashboard.pastEvents ?? [];
+
+  const qrFromTicket = (ticket) => {
+    const data = ticket.qrCode || ticket.ticketNumber || `ticket-${ticket.ticketId}`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data)}`;
   };
 
   return (
@@ -116,7 +121,7 @@ const AttendeeDashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600 mb-1">Active Tickets</p>
-                  <p className="text-3xl font-bold text-gray-900">{tickets.length}</p>
+                  <p className="text-3xl font-bold text-gray-900">{dashboard.activeTickets}</p>
                 </div>
                 <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
                   <Ticket className="w-6 h-6 text-orange-600" />
@@ -130,7 +135,7 @@ const AttendeeDashboard = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600 mb-1">Events Attended</p>
-                  <p className="text-3xl font-bold text-gray-900">{pastEvents.length}</p>
+                  <p className="text-3xl font-bold text-gray-900">{dashboard.eventsAttended}</p>
                 </div>
                 <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
                   <Calendar className="w-6 h-6 text-blue-600" />
@@ -145,7 +150,7 @@ const AttendeeDashboard = () => {
                 <div>
                   <p className="text-sm font-medium text-gray-600 mb-1">Total Spent</p>
                   <p className="text-3xl font-bold text-gray-900">
-                    ₱{tickets.reduce((sum, ticket) => sum + ticket.price, 0)}
+                    ₱{totalSpent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
@@ -177,8 +182,8 @@ const AttendeeDashboard = () => {
             </div>
 
             <div className="grid md:grid-cols-2 gap-6">
-              {upcomingEvents.map((ticket) => (
-                <Card key={ticket.id} className="event-card">
+              {upcomingTickets.map((ticket) => (
+                <Card key={ticket.ticketId} className="event-card">
                   <CardContent className="p-6">
                     <div className="space-y-4">
                       {/* Event Info */}
@@ -190,7 +195,7 @@ const AttendeeDashboard = () => {
                           <div className="space-y-2">
                             <div className="flex items-center text-sm text-gray-600">
                               <Calendar className="w-4 h-4 mr-2 text-orange-500" />
-                              <span>{formatDate(ticket.eventDate)} at {ticket.eventTime}</span>
+                              <span>{formatDate(ticket.eventStart)} </span>
                             </div>
                             <div className="flex items-center text-sm text-gray-600">
                               <MapPin className="w-4 h-4 mr-2 text-orange-500" />
@@ -199,7 +204,7 @@ const AttendeeDashboard = () => {
                           </div>
                         </div>
                         
-                        {isEventSoon(ticket.eventDate) && (
+                        {isEventSoon(ticket.eventStart) && (
                           <Badge className="bg-red-100 text-red-700">
                             <Clock className="w-3 h-3 mr-1" />
                             Soon
@@ -210,7 +215,7 @@ const AttendeeDashboard = () => {
                       {/* QR Code */}
                       <div className="qr-container bg-gray-50 rounded-xl p-4 text-center">
                         <img 
-                          src={ticket.qrCode} 
+                          src={qrFromTicket(ticket)}
                           alt="QR Code"
                           className="w-24 h-24 mx-auto mb-3 rounded-lg"
                         />
@@ -221,7 +226,7 @@ const AttendeeDashboard = () => {
 
                       {/* Actions */}
                       <div className="flex space-x-2 pt-4 border-t border-gray-100">
-                        <Link to={`/ticket/${ticket.id}`} className="flex-1">
+                        <Link to={`/ticket/${ticket.ticketId}`} className="flex-1">
                           <Button variant="outline" size="sm" className="w-full">
                             <QrCode className="w-4 h-4 mr-2" />
                             View Full Ticket
@@ -240,7 +245,7 @@ const AttendeeDashboard = () => {
               ))}
             </div>
 
-            {upcomingEvents.length === 0 && (
+            {upcomingTickets.length === 0 && (
               <div className="text-center py-16">
                 <Ticket className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-xl font-medium text-gray-900 mb-2">
@@ -283,7 +288,7 @@ const AttendeeDashboard = () => {
             
             <div className="space-y-4">
               {pastEvents.map((event) => (
-                <Card key={event.id} className="hover-lift">
+                <Card key={event.eventId} className="hover-lift">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-4">

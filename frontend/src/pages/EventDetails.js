@@ -1,98 +1,189 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { 
+import {
   Calendar,
   MapPin,
-  Clock,
   Users,
   Ticket,
   Share,
   ArrowLeft,
   Star,
-  DollarSign,
   CheckCircle,
   User,
-  Info
+  Info,
+  AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiService } from '../services/api';
 
 const EventDetails = () => {
   const { id } = useParams();
-  const { user, isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const [event, setEvent] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [ticketQuantity, setTicketQuantity] = useState(1);
 
+  const getStoredOrganizerProfile = useCallback(() => {
+    try {
+      const raw = localStorage.getItem('qrush_organizer_profile');
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw);
+      if (parsed?.userId && user?.id && parsed.userId !== user.id) {
+        return null;
+      }
+      return parsed;
+    } catch (storageError) {
+      console.warn('Unable to parse stored organizer profile', storageError);
+      return null;
+    }
+  }, [user?.id]);
+
   useEffect(() => {
-    // Mock event data - in real app, this would fetch from API
-    const mockEvent = {
-      id: parseInt(id),
-      title: "Tech Conference 2024",
-      description: "Join us for the most anticipated technology conference of the year! This comprehensive event brings together industry leaders, innovative startups, and tech enthusiasts to explore the latest trends in artificial intelligence, blockchain technology, and web development.",
-      fullDescription: "The Tech Conference 2024 is a two-day immersive experience featuring keynote speeches from renowned tech leaders, hands-on workshops, networking opportunities, and product demonstrations. Whether you're a developer, entrepreneur, or tech enthusiast, this conference offers valuable insights into the future of technology.\n\nHighlights include:\n• Keynote speeches from industry pioneers\n• Interactive workshops and coding sessions\n• Startup pitch competitions\n• Networking lunch and evening reception\n• Exhibition showcase with latest tech products\n• Career fair and recruitment opportunities",
-      date: "2024-03-15",
-      time: "09:00 AM",
-      endTime: "06:00 PM",
-      location: "San Francisco Convention Center",
-      address: "747 Howard Street, San Francisco, CA 94103",
-      category: "technology",
-      price: 299,
-      capacity: 500,
-      registered: 387,
-      rating: 4.8,
-      reviews: 156,
-      image: "https://images.unsplash.com/photo-1699862731387-d40f6908ca4e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHwxfHxldmVudCUyMHRpY2tldGluZ3xlbnwwfHx8fDE3NTg0NjM0MDd8MA&ixlib=rb-4.1.0&q=85",
-      organizer: {
-        name: "TechEvents Inc.",
-        email: "contact@techevents.com",
-        phone: "+1 (555) 123-4567",
-        avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=organizer"
-      },
-      features: [
-        "Live streaming available",
-        "Recording provided",
-        "Networking opportunities",
-        "Refreshments included",
-        "Certificate of attendance",
-        "Swag bag included"
-      ],
-      agenda: [
-        { time: "09:00 AM", title: "Registration & Welcome Coffee", speaker: "" },
-        { time: "10:00 AM", title: "Opening Keynote: Future of AI", speaker: "Dr. Sarah Chen" },
-        { time: "11:00 AM", title: "Panel: Blockchain Revolution", speaker: "Industry Leaders" },
-        { time: "12:00 PM", title: "Networking Lunch", speaker: "" },
-        { time: "01:30 PM", title: "Workshop: Building React Apps", speaker: "Dev Team" },
-        { time: "03:00 PM", title: "Startup Pitch Competition", speaker: "Various Founders" },
-        { time: "04:30 PM", title: "Closing Remarks & Networking", speaker: "" }
-      ]
+    const mapEventResponse = (data) => {
+      if (!data) {
+        return null;
+      }
+
+      const descriptionSegments = (data.description || '')
+        .split('\n\n')
+        .map(segment => segment.trim())
+        .filter(Boolean);
+
+      const summary = descriptionSegments[0] || 'Event details will be available soon.';
+      const remainingSegments = descriptionSegments.slice(1);
+      const inferredAddress = remainingSegments.length > 0
+        ? remainingSegments[remainingSegments.length - 1]
+        : '';
+      const detailedDescription = remainingSegments.length > 1
+        ? remainingSegments.slice(0, -1).join('\n\n')
+        : '';
+
+      const mappedEvent = {
+        eventID: data.eventID,
+        title: data.name || 'Untitled Event',
+        description: summary,
+        fullDescription: detailedDescription,
+        address: inferredAddress,
+        category: data.category || 'event',
+        startDate: data.startDate || null,
+        endDate: data.endDate || null,
+        location: data.location || 'Venue to be announced',
+        ticketPrice: Number(data.ticketPrice ?? 0),
+        capacity: Number(data.capacity ?? 0),
+        registered: Number(data.registered ?? data.ticketsSold ?? 0),
+        organizerName: data.organizerDisplayName || data.organizer || 'Organizer details pending',
+        organizerEmail: data.organizerEmail || '',
+        organizerPhone: data.organizerPhone || '',
+        image: data.image || null,
+        rating: data.rating ?? null,
+        reviews: data.reviews ?? null,
+        features: data.features || [],
+        agenda: data.agenda || [],
+      };
+
+      const storedProfile = getStoredOrganizerProfile();
+      if (storedProfile) {
+        const normalizedStoredName = (storedProfile.organizationName || '').trim().toLowerCase();
+        const normalizedEventName = (mappedEvent.organizerName || '').trim().toLowerCase();
+        const normalizedUserName = (user?.name || '').trim().toLowerCase();
+        const matchesStoredName = normalizedStoredName && normalizedStoredName === normalizedEventName;
+        const matchesUserName = normalizedStoredName && normalizedStoredName === normalizedUserName;
+        const matchesUserId = storedProfile?.userId && user?.id && storedProfile.userId === user.id;
+
+        if (matchesStoredName || matchesUserName || matchesUserId) {
+          mappedEvent.organizerName = storedProfile.organizationName || mappedEvent.organizerName;
+          mappedEvent.organizerEmail = storedProfile.email || mappedEvent.organizerEmail;
+          mappedEvent.organizerPhone = storedProfile.contactNumber || mappedEvent.organizerPhone;
+        }
+      }
+
+      return mappedEvent;
     };
 
-    setTimeout(() => {
-      setEvent(mockEvent);
-      setIsLoading(false);
-    }, 500);
-  }, [id]);
+    const loadEvent = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await apiService.getEvent(id);
+        const mapped = mapEventResponse(response);
+        if (!mapped) {
+          setError('We could not find details for this event.');
+        }
+        setEvent(mapped);
+      } catch (err) {
+        console.error('Failed to load event details', err);
+        setError('Unable to load event details right now.');
+        toast.error('Unable to load event details.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadEvent();
+  }, [getStoredOrganizerProfile, id, user?.id, user?.name]);
 
   const formatDate = (dateString) => {
+    if (!dateString) {
+      return 'Date to be announced';
+    }
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
+    if (Number.isNaN(date.getTime())) {
+      return 'Date to be announced';
+    }
+    return date.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
-      month: 'long', 
+      month: 'long',
       day: 'numeric'
     });
   };
 
   const getAvailabilityStatus = (registered, capacity) => {
-    const percentage = (registered / capacity) * 100;
+    if (!capacity) {
+      return { text: 'Capacity TBA', color: 'bg-blue-100 text-blue-700' };
+    }
+    const percentage = Math.min((registered / capacity) * 100, 100);
     if (percentage >= 95) return { text: 'Almost Full', color: 'bg-red-100 text-red-700' };
     if (percentage >= 75) return { text: 'Filling Fast', color: 'bg-yellow-100 text-yellow-700' };
     return { text: 'Available', color: 'bg-green-100 text-green-700' };
+  };
+
+  const formatTimeRange = (start, end) => {
+    if (!start) {
+      return 'Schedule to be announced';
+    }
+    const startDate = new Date(start);
+    const endDate = end ? new Date(end) : null;
+    if (Number.isNaN(startDate.getTime())) {
+      return 'Schedule to be announced';
+    }
+    const startLabel = startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const endLabel = endDate && !Number.isNaN(endDate.getTime())
+      ? endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      : 'TBD';
+    return `${startLabel} - ${endLabel}`;
+  };
+
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+    }).format(value ?? 0);
+  };
+
+  const formatPrice = (value) => {
+    if (!Number.isFinite(value) || value <= 0) {
+      return 'Free';
+    }
+    return formatCurrency(value);
   };
 
   const handlePurchase = () => {
@@ -102,13 +193,32 @@ const EventDetails = () => {
       return;
     }
 
-    // Simulate ticket purchase
-    toast.success(`Successfully purchased ${ticketQuantity} ticket(s) for ${event.title}!`);
-    
-    // In real app, this would process payment and generate tickets
-    setTimeout(() => {
-      navigate('/dashboard');
-    }, 1500);
+    if (!user?.id) {
+      toast.error('Your profile is missing an identifier. Please sign out and sign back in.');
+      return;
+    }
+
+    if (!event?.eventID) {
+      toast.error('We could not determine which event to book.');
+      return;
+    }
+
+    toast.promise(
+      apiService.bookTickets({
+        userId: user.id,
+        eventId: event.eventID,
+        quantity: ticketQuantity,
+        ticketType: 'REGULAR',
+      }),
+      {
+        loading: 'Processing your tickets...',
+        success: () => {
+          navigate('/dashboard');
+          return `Successfully booked ${ticketQuantity} ticket${ticketQuantity > 1 ? 's' : ''}!`;
+        },
+        error: 'Unable to complete the booking. Please try again.',
+      }
+    );
   };
 
   const handleShare = () => {
@@ -135,6 +245,21 @@ const EventDetails = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Event unavailable</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button onClick={() => navigate('/events')}>
+            Browse Events
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (!event) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -151,13 +276,54 @@ const EventDetails = () => {
   }
 
   const availability = getAvailabilityStatus(event.registered, event.capacity);
+  const heroImage = event.image || 'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=1600&q=80';
+  const timeRangeLabel = formatTimeRange(event.startDate, event.endDate);
+  const attendeeSummary = event.registered && event.capacity
+    ? `${event.registered} registered`
+    : 'Registrations opening soon';
+  const ratingSummary = event.rating
+    ? (
+        <div className="flex items-center space-x-1">
+          <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+          <span>{event.rating}</span>
+          {event.reviews ? (
+            <span className="text-sm">({event.reviews} reviews)</span>
+          ) : null}
+        </div>
+      )
+    : null;
+
+  const featureList = event.features.length > 0
+    ? event.features
+    : [
+        'Instant QR ticket confirmation',
+        'Organizer support contact available',
+        'Entry management powered by QRush',
+        'Secure checkout with payment receipts',
+      ];
+
+  const [rangeStart, rangeEnd] = timeRangeLabel.includes(' - ')
+    ? timeRangeLabel.split(' - ')
+    : [timeRangeLabel, ''];
+
+  const agendaItems = event.agenda.length > 0
+    ? event.agenda
+    : [
+        { time: rangeStart || 'TBD', title: 'Doors open & registration', speaker: '' },
+        { time: rangeEnd || 'TBD', title: 'Event wrap-up', speaker: '' },
+      ];
+
+  const isSoldOut = Boolean(event.capacity) && event.registered >= event.capacity;
+  const organizerEmailLabel = event.organizerEmail || 'Email unavailable';
+  const organizerPhoneLabel = event.organizerPhone || 'Contact number unavailable';
+  const totalCost = (event.ticketPrice ?? 0) * ticketQuantity;
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Hero Section */}
       <div className="relative h-96 overflow-hidden">
         <img 
-          src={event.image} 
+          src={heroImage}
           alt={event.title}
           className="w-full h-full object-cover"
         />
@@ -194,13 +360,9 @@ const EventDetails = () => {
                 {event.title}
               </h1>
               <div className="flex items-center space-x-4 text-white/90">
-                <div className="flex items-center space-x-1">
-                  <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                  <span>{event.rating}</span>
-                  <span className="text-sm">({event.reviews} reviews)</span>
-                </div>
-                <span>•</span>
-                <span>{event.registered} registered</span>
+                {ratingSummary}
+                {ratingSummary && <span>•</span>}
+                <span>{attendeeSummary}</span>
               </div>
             </div>
           </div>
@@ -220,8 +382,8 @@ const EventDetails = () => {
                       <Calendar className="w-5 h-5 text-orange-500" />
                       <div>
                         <p className="font-semibold text-gray-900">Date & Time</p>
-                        <p className="text-gray-600">{formatDate(event.date)}</p>
-                        <p className="text-gray-600">{event.time} - {event.endTime}</p>
+                        <p className="text-gray-600">{formatDate(event.startDate)}</p>
+                        <p className="text-gray-600">{timeRangeLabel}</p>
                       </div>
                     </div>
                     
@@ -230,7 +392,9 @@ const EventDetails = () => {
                       <div>
                         <p className="font-semibold text-gray-900">Location</p>
                         <p className="text-gray-600">{event.location}</p>
-                        <p className="text-sm text-gray-500">{event.address}</p>
+                        {event.address && (
+                          <p className="text-sm text-gray-500 whitespace-pre-line">{event.address}</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -240,11 +404,11 @@ const EventDetails = () => {
                       <Users className="w-5 h-5 text-orange-500" />
                       <div>
                         <p className="font-semibold text-gray-900">Attendance</p>
-                        <p className="text-gray-600">{event.registered} / {event.capacity} people</p>
+                        <p className="text-gray-600">{event.capacity ? `${event.registered} / ${event.capacity} people` : attendeeSummary}</p>
                         <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
                           <div 
                             className="bg-orange-500 h-2 rounded-full"
-                            style={{ width: `${(event.registered / event.capacity) * 100}%` }}
+                            style={{ width: `${Math.min(event.capacity ? (event.registered / event.capacity) * 100 : 0, 100)}%` }}
                           ></div>
                         </div>
                       </div>
@@ -254,8 +418,8 @@ const EventDetails = () => {
                       <User className="w-5 h-5 text-orange-500" />
                       <div>
                         <p className="font-semibold text-gray-900">Organizer</p>
-                        <p className="text-gray-600">{event.organizer.name}</p>
-                        <p className="text-sm text-gray-500">{event.organizer.email}</p>
+                        <p className="text-gray-600">{event.organizerName}</p>
+                        <p className="text-sm text-gray-500">{organizerEmailLabel}</p>
                       </div>
                     </div>
                   </div>
@@ -265,7 +429,9 @@ const EventDetails = () => {
                   <h3 className="text-xl font-semibold text-gray-900 mb-3">About This Event</h3>
                   <div className="text-gray-600 space-y-4">
                     <p>{event.description}</p>
-                    <div className="whitespace-pre-line">{event.fullDescription}</div>
+                    {event.fullDescription && (
+                      <div className="whitespace-pre-line">{event.fullDescription}</div>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -276,7 +442,7 @@ const EventDetails = () => {
               <CardContent className="p-6">
                 <h3 className="text-xl font-semibold text-gray-900 mb-4">What's Included</h3>
                 <div className="grid md:grid-cols-2 gap-3">
-                  {event.features.map((feature, index) => (
+                  {featureList.map((feature, index) => (
                     <div key={index} className="flex items-center space-x-2">
                       <CheckCircle className="w-4 h-4 text-green-500" />
                       <span className="text-gray-600">{feature}</span>
@@ -291,10 +457,10 @@ const EventDetails = () => {
               <CardContent className="p-6">
                 <h3 className="text-xl font-semibold text-gray-900 mb-4">Event Agenda</h3>
                 <div className="space-y-4">
-                  {event.agenda.map((item, index) => (
+                  {agendaItems.map((item, index) => (
                     <div key={index} className="flex space-x-4 pb-4 border-b border-gray-100 last:border-0">
                       <div className="w-20 flex-shrink-0">
-                        <span className="text-sm font-medium text-orange-600">{item.time}</span>
+                        <span className="text-sm font-medium text-orange-600">{item.time || 'TBD'}</span>
                       </div>
                       <div className="flex-1">
                         <h4 className="font-semibold text-gray-900">{item.title}</h4>
@@ -318,7 +484,7 @@ const EventDetails = () => {
                     {/* Price */}
                     <div className="text-center">
                       <div className="text-3xl font-bold text-gray-900 mb-1">
-                        ₱{event.price}
+                        {formatPrice(event.ticketPrice)}
                       </div>
                       <p className="text-gray-600">per ticket</p>
                     </div>
@@ -356,7 +522,7 @@ const EventDetails = () => {
                       <div className="flex items-center justify-between">
                         <span className="font-semibold text-gray-900">Total</span>
                         <span className="text-xl font-bold text-gray-900">
-                          ₱{event.price * ticketQuantity}
+                          {formatCurrency(totalCost)}
                         </span>
                       </div>
                     </div>
@@ -365,10 +531,10 @@ const EventDetails = () => {
                     <Button
                       onClick={handlePurchase}
                       className="w-full gradient-orange text-white text-lg py-3 h-auto"
-                      disabled={event.registered >= event.capacity}
+                      disabled={isSoldOut}
                     >
                       <Ticket className="w-5 h-5 mr-2" />
-                      {event.registered >= event.capacity ? 'Sold Out' : 'Buy Tickets'}
+                      {isSoldOut ? 'Sold Out' : 'Buy Tickets'}
                     </Button>
 
                     {/* Info */}
@@ -388,18 +554,18 @@ const EventDetails = () => {
                   <h4 className="font-semibold text-gray-900 mb-4">Event Organizer</h4>
                   <div className="flex items-center space-x-3 mb-4">
                     <img
-                      src={event.organizer.avatar}
-                      alt={event.organizer.name}
+                      src={`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(event.organizerName)}`}
+                      alt={event.organizerName}
                       className="w-12 h-12 rounded-full"
                     />
                     <div>
-                      <p className="font-medium text-gray-900">{event.organizer.name}</p>
+                      <p className="font-medium text-gray-900">{event.organizerName}</p>
                       <p className="text-sm text-gray-600">Event Organizer</p>
                     </div>
                   </div>
                   <div className="space-y-2 text-sm text-gray-600">
-                    <p>{event.organizer.email}</p>
-                    <p>{event.organizer.phone}</p>
+                    <p>{organizerEmailLabel}</p>
+                    <p>{organizerPhoneLabel}</p>
                   </div>
                 </CardContent>
               </Card>

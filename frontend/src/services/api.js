@@ -77,6 +77,51 @@ class ApiService {
     return this.request(`/users/${userId}`);
   }
 
+  async getEvents() {
+    return this.request('/events');
+  }
+
+  async createEvent(eventData) {
+    return this.request('/events', {
+      method: 'POST',
+      body: JSON.stringify(eventData),
+    });
+  }
+
+  async getEvent(eventId) {
+    return this.request(`/events/${eventId}`);
+  }
+
+  async updateEvent(eventId, eventData) {
+    return this.request(`/events/${eventId}`, {
+      method: 'PUT',
+      body: JSON.stringify(eventData),
+    });
+  }
+
+  async bookTickets(payload) {
+    return this.request('/tickets/book', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getTicket(ticketId) {
+    return this.request(`/tickets/${ticketId}`);
+  }
+
+  async getAttendeeDashboard(userId) {
+    return this.request(`/dashboard/attendee/${userId}`);
+  }
+
+  async getOrganizerDashboard(userId) {
+    return this.request(`/dashboard/organizer/${userId}`);
+  }
+
+  async getStaffDashboard(eventId) {
+    return this.request(`/dashboard/staff?eventId=${eventId}`);
+  }
+
   // Additional API methods can be added here as needed
   // For events, tickets, etc.
 }

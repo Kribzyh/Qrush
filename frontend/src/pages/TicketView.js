@@ -4,8 +4,7 @@ import { useAuth } from '../App';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { 
-  QrCode,
+import {
   Calendar,
   MapPin,
   Clock,
@@ -15,9 +14,11 @@ import {
   ArrowLeft,
   Ticket,
   CheckCircle,
-  Smartphone
+  Smartphone,
+  AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiService } from '../services/api';
 
 const TicketView = () => {
   const { ticketId } = useParams();
@@ -25,51 +26,125 @@ const TicketView = () => {
   const navigate = useNavigate();
   const [ticket, setTicket] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Mock ticket data - in real app, this would fetch from API
-    const mockTicket = {
-      id: ticketId,
-      ticketNumber: "TC2024-001234",
-      eventTitle: "Tech Conference 2024",
-      eventDescription: "Annual technology conference featuring the latest innovations in AI, blockchain, and web development.",
-      date: "2024-03-15",
-      time: "09:00 AM",
-      endTime: "06:00 PM",
-      location: "San Francisco Convention Center",
-      address: "747 Howard Street, San Francisco, CA 94103",
-      organizer: "TechEvents Inc.",
-      attendeeName: user.name,
-      attendeeEmail: user.email,
-      price: 299,
-      seat: "A-15",
-      gate: "Main Entrance",
-      qrCode: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${ticketId}`,
-      purchaseDate: "2024-02-20",
-      status: "confirmed",
-      category: "Technology Conference",
-      instructions: [
-        "Arrive 30 minutes before the event start time",
-        "Bring a valid photo ID for verification",
-        "Keep your QR code ready for scanning at the entrance",
-        "Check-in opens at 8:30 AM"
-      ]
+    const mapTicketResponse = (data) => {
+      if (!data) {
+        return null;
+      }
+
+      const event = data.event || {};
+      const attendee = data.user || {};
+      const descriptionSegments = (event.description || '')
+        .split('\n\n')
+        .map(segment => segment.trim())
+        .filter(Boolean);
+
+      const primaryDescription = descriptionSegments[0] || 'No event description available yet.';
+      const remainingSegments = descriptionSegments.slice(1);
+      const address = remainingSegments.length > 0
+        ? remainingSegments[remainingSegments.length - 1]
+        : '';
+      const supplementalDetails = remainingSegments.length > 1
+        ? remainingSegments.slice(0, -1).join('\n\n')
+        : '';
+
+      const startDate = event.startDate || null;
+      const endDate = event.endDate || null;
+      const qrCodeValue = data.qrCode || `ticket-${data.ticketID ?? ticketId}`;
+
+      return {
+        id: data.ticketID,
+        ticketNumber: data.ticketID ? `TCK-${String(data.ticketID).padStart(6, '0')}` : qrCodeValue,
+        qrCode: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrCodeValue)}`,
+        eventTitle: event.name || 'Event Details',
+        eventDescription: primaryDescription,
+        supplementalDetails,
+        category: event.category || 'Event',
+        startDate,
+        endDate,
+        location: event.location || 'Location to be announced',
+        address,
+        organizer: event.organizer || 'Organizer details pending',
+        attendeeName: attendee.name || user?.name || 'Attendee',
+        attendeeEmail: attendee.email || user?.email || 'Email unavailable',
+        price: data.price ?? event.ticketPrice ?? 0,
+        purchaseDate: data.purchaseDate || null,
+        status: (data.status || 'PENDING').toUpperCase(),
+        seat: 'General Admission',
+        gate: 'Main Entrance',
+        instructions: [
+          'Arrive 30 minutes before the start time.',
+          'Bring a valid photo ID and this QR code for check-in.',
+          'Contact the organizer if you have any special requirements.',
+        ],
+      };
     };
 
-    setTimeout(() => {
-      setTicket(mockTicket);
-      setIsLoading(false);
-    }, 500);
+    const fetchTicket = async () => {
+      if (!ticketId) {
+        setTicket(null);
+        setIsLoading(false);
+        setError('Ticket reference is missing.');
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await apiService.getTicket(ticketId);
+        setTicket(mapTicketResponse(response));
+      } catch (err) {
+        console.error('Failed to load ticket details', err);
+        setTicket(null);
+        setError('We could not load your ticket details right now.');
+        toast.error('Unable to load ticket details.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTicket();
   }, [ticketId, user]);
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
+  const formatDate = (value) => {
+    if (!value) {
+      return 'Date to be announced';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return 'Date to be announced';
+    }
+    return date.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
-      month: 'long', 
-      day: 'numeric'
+      month: 'long',
+      day: 'numeric',
     });
+  };
+
+  const formatTimeRange = (start, end) => {
+    if (!start) {
+      return 'Schedule to be announced';
+    }
+    const startDate = new Date(start);
+    const endDate = end ? new Date(end) : null;
+    if (Number.isNaN(startDate.getTime())) {
+      return 'Schedule to be announced';
+    }
+    const startLabel = startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const endLabel = endDate && !Number.isNaN(endDate.getTime())
+      ? endDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      : 'TBD';
+    return `${startLabel} - ${endLabel}`;
+  };
+
+  const formatCurrency = (value) => {
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+    }).format(value ?? 0);
   };
 
   const handleDownload = () => {
@@ -95,6 +170,21 @@ const TicketView = () => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading your ticket...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Ticket unavailable</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button onClick={() => navigate('/dashboard')}>
+            Back to Dashboard
+          </Button>
         </div>
       </div>
     );
@@ -183,8 +273,8 @@ const TicketView = () => {
                   <Calendar className="w-5 h-5 text-orange-500 mt-0.5" />
                   <div>
                     <p className="font-semibold text-gray-900">Date & Time</p>
-                    <p className="text-gray-600">{formatDate(ticket.date)}</p>
-                    <p className="text-gray-600">{ticket.time} - {ticket.endTime}</p>
+                    <p className="text-gray-600">{formatDate(ticket.startDate)}</p>
+                    <p className="text-gray-600">{formatTimeRange(ticket.startDate, ticket.endDate)}</p>
                   </div>
                 </div>
                 
@@ -193,7 +283,9 @@ const TicketView = () => {
                   <div>
                     <p className="font-semibold text-gray-900">Venue</p>
                     <p className="text-gray-600">{ticket.location}</p>
-                    <p className="text-sm text-gray-500">{ticket.address}</p>
+                    {ticket.address && (
+                      <p className="text-sm text-gray-500 whitespace-pre-line">{ticket.address}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -225,12 +317,14 @@ const TicketView = () => {
                 <div>
                   <p className="text-sm text-gray-600">Purchase Date</p>
                   <p className="font-semibold text-gray-900">
-                    {new Date(ticket.purchaseDate).toLocaleDateString('en-US')}
+                    {ticket.purchaseDate
+                      ? new Date(ticket.purchaseDate).toLocaleDateString('en-US')
+                      : '—'}
                   </p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Amount Paid</p>
-                  <p className="font-semibold text-gray-900">₱{ticket.price}</p>
+                  <p className="font-semibold text-gray-900">{formatCurrency(ticket.price)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Organized by</p>
@@ -264,6 +358,11 @@ const TicketView = () => {
           <CardContent className="p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-3">About This Event</h3>
             <p className="text-gray-600 leading-relaxed">{ticket.eventDescription}</p>
+            {ticket.supplementalDetails && (
+              <p className="text-gray-600 leading-relaxed mt-4 whitespace-pre-line">
+                {ticket.supplementalDetails}
+              </p>
+            )}
           </CardContent>
         </Card>
 

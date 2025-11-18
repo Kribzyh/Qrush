@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { Button } from '../components/ui/button';
@@ -11,9 +11,7 @@ import {
   XCircle,
   ArrowLeft,
   AlertTriangle,
-  User,
-  Clock,
-  Ticket
+  User
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -22,7 +20,6 @@ const QRScanner = () => {
   const navigate = useNavigate();
   const [isScanning, setIsScanning] = useState(false);
   const [scannedData, setScannedData] = useState(null);
-  const [lastScanResult, setLastScanResult] = useState(null);
 
   // Mock QR code scanning simulation
   const simulateQRScan = () => {
@@ -65,7 +62,6 @@ const QRScanner = () => {
     setTimeout(() => {
       const randomTicket = mockTickets[Math.floor(Math.random() * mockTickets.length)];
       setScannedData(randomTicket);
-      setLastScanResult(randomTicket);
       setIsScanning(false);
 
       // Show toast notification

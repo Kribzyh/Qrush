@@ -25,11 +25,11 @@ public class TicketEntity {
     @Column(nullable = false)
     private Double price;
 
-    @Column(nullable = false)
-    private LocalDateTime purchase_date;
+    @Column(name = "purchase_date", nullable = false)
+    private LocalDateTime purchaseDate;
 
-    @Column(nullable = false)
-    private String ticket_type;
+    @Column(name = "ticket_type", nullable = false)
+    private String ticketType;
 
     @Column(nullable = false)
     private String status;
@@ -75,20 +75,20 @@ public class TicketEntity {
         this.price = price;
     }
 
-    public LocalDateTime getPurchase_date() {
-        return purchase_date;
+    public LocalDateTime getPurchaseDate() {
+        return purchaseDate;
     }
 
-    public void setPurchase_date(LocalDateTime purchase_date) {
-        this.purchase_date = purchase_date;
+    public void setPurchaseDate(LocalDateTime purchaseDate) {
+        this.purchaseDate = purchaseDate;
     }
 
-    public String getTicket_type() {
-        return ticket_type;
+    public String getTicketType() {
+        return ticketType;
     }
 
-    public void setTicket_type(String ticket_type) {
-        this.ticket_type = ticket_type;
+    public void setTicketType(String ticketType) {
+        this.ticketType = ticketType;
     }
 
     public String getStatus() {
