@@ -1,4 +1,5 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
@@ -29,11 +30,17 @@ const EventCard = ({ event }) => {
   return (
     <Card className="event-card overflow-hidden hover:shadow-lg transition-shadow duration-300">
       <div className="relative">
-        <img 
-          src={event.image || "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=800&q=80"} 
-          alt={event.name}
-          className="w-full h-48 object-cover"
-        />
+        {event.image ? (
+          <img
+            src={event.image}
+            alt={event.name}
+            className="w-full h-48 object-cover"
+          />
+        ) : (
+          <div className="w-full h-48 bg-gradient-to-br from-orange-200 via-orange-300 to-orange-400 flex items-center justify-center">
+            <span className="text-orange-900 font-semibold">Add an event image to highlight this listing</span>
+          </div>
+        )}
         <div className="absolute top-4 left-4">
           <Badge className={availability.color}>
             {availability.text}
@@ -106,3 +113,19 @@ const EventCard = ({ event }) => {
 };
 
 export default EventCard;
+
+EventCard.propTypes = {
+  event: PropTypes.shape({
+    eventID: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
+    name: PropTypes.string.isRequired,
+    description: PropTypes.string,
+    startDate: PropTypes.oneOfType([PropTypes.string, PropTypes.instanceOf(Date)]),
+    location: PropTypes.string,
+    registered: PropTypes.number,
+    capacity: PropTypes.number,
+    ticketPrice: PropTypes.number,
+    organizer: PropTypes.string,
+    rating: PropTypes.number,
+    image: PropTypes.string,
+  }).isRequired,
+};
