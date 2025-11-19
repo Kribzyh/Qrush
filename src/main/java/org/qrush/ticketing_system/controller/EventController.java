@@ -22,7 +22,11 @@ public class EventController {
     }
 
     @GetMapping("/{id}")
-    public EventEntity getEventById(@PathVariable Long id) {
+    public EventEntity getEventById(@PathVariable Long id,
+                                    @RequestParam(name = "trackView", defaultValue = "true") boolean trackView) {
+        if (trackView) {
+            return eventService.getEventByIdAndIncrementViews(id);
+        }
         return eventService.getEventById(id)
                 .orElseThrow(() -> new RuntimeException("Event not found with ID: " + id));
     }
