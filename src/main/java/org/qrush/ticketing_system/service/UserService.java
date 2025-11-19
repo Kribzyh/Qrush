@@ -5,12 +5,14 @@ import org.qrush.ticketing_system.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
 public class UserService {
 
     private final UserRepository userRepository;
+    private static final String USER_ID_REQUIRED = "User ID must not be null";
 
     public UserService(UserRepository userRepository) {
         this.userRepository = userRepository;
@@ -21,18 +23,20 @@ public class UserService {
     }
 
     public Optional<UserEntity> getUserById(Long id) {
-        return userRepository.findById(id);
+        return userRepository.findById(Objects.requireNonNull(id, USER_ID_REQUIRED));
     }
 
     public Optional<UserEntity> getUserByEmail(String email) {
-        return userRepository.findByEmail(email);
+        return userRepository.findByEmail(Objects.requireNonNull(email, "Email must not be null"));
     }
 
     public UserEntity createUser(UserEntity user) {
-        return userRepository.save(user);
+        return userRepository.save(Objects.requireNonNull(user, "User must not be null"));
     }
 
     public UserEntity updateUser(Long id, UserEntity updatedUser) {
+        Objects.requireNonNull(id, USER_ID_REQUIRED);
+        Objects.requireNonNull(updatedUser, "Updated user must not be null");
         return userRepository.findById(id).map(user -> {
             user.setName(updatedUser.getName());
             user.setEmail(updatedUser.getEmail());
@@ -44,6 +48,6 @@ public class UserService {
     }
 
     public void deleteUser(Long id) {
-        userRepository.deleteById(id);
+        userRepository.deleteById(Objects.requireNonNull(id, USER_ID_REQUIRED));
     }
 }
