@@ -57,6 +57,9 @@ public class EventEntity {
     @Column(name = "agenda", columnDefinition = "LONGTEXT")
     private String agenda;
 
+    @Column(name = "view_count", nullable = false)
+    private Long views = 0L;
+
     // Getters and Setters
     public Long getEventID() {
         return eventID;
@@ -184,5 +187,13 @@ public class EventEntity {
 
     public void setAgenda(String agenda) {
         this.agenda = agenda;
+    }
+
+    public Long getViews() {
+        return views;
+    }
+
+    public void setViews(Long views) {
+        this.views = views;
     }
 }
