@@ -88,8 +88,10 @@ class ApiService {
     });
   }
 
-  async getEvent(eventId) {
-    return this.request(`/events/${eventId}`);
+  async getEvent(eventId, options = {}) {
+    const { trackView = true } = options;
+    const query = trackView ? '' : '?trackView=false';
+    return this.request(`/events/${eventId}${query}`);
   }
 
   async updateEvent(eventId, eventData) {
