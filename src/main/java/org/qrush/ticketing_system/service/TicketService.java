@@ -1,6 +1,9 @@
 package org.qrush.ticketing_system.service;
 
 import org.qrush.ticketing_system.dto.BookTicketRequest;
+import org.qrush.ticketing_system.dto.BulkCheckInRequest;
+import org.qrush.ticketing_system.dto.BulkCheckInResponse;
+import org.qrush.ticketing_system.dto.ManualTicketVerificationRequest;
 import org.qrush.ticketing_system.dto.TicketScanRequest;
 import org.qrush.ticketing_system.dto.TicketScanResponse;
 import org.qrush.ticketing_system.entity.AttendanceLogEntity;
@@ -12,8 +15,10 @@ import org.qrush.ticketing_system.repository.EventRepository;
 import org.qrush.ticketing_system.repository.TicketRepository;
 import org.qrush.ticketing_system.repository.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -31,6 +36,9 @@ public class TicketService {
     private static final String USER_ID_REQUIRED = "User ID must not be null";
     private static final String EVENT_ID_REQUIRED = "Event ID must not be null";
     private static final String UPDATED_TICKET_REQUIRED = "Updated ticket must not be null";
+    private static final String STATUS_VALID = "valid";
+    private static final String STATUS_DUPLICATE = "duplicate";
+    private static final String STATUS_INVALID = "invalid";
 
     public TicketService(TicketRepository ticketRepository,
                          UserRepository userRepository,
@@ -106,6 +114,7 @@ public class TicketService {
         ticketRepository.deleteById(Objects.requireNonNull(id, TICKET_ID_REQUIRED));
     }
 
+    @Transactional
     public TicketScanResponse scanTicket(TicketScanRequest request) {
         Objects.requireNonNull(request, "Ticket scan request must not be null");
 
@@ -116,43 +125,119 @@ public class TicketService {
             throw new IllegalArgumentException("QR code must not be empty");
         }
 
-        String gate = Optional.ofNullable(request.gate())
-                .map(String::trim)
-                .filter(gateValue -> !gateValue.isEmpty())
-                .orElse("Main Gate");
-
+        String gate = normaliseGate(request.gate());
         LocalDateTime scannedAt = LocalDateTime.now();
 
         Optional<TicketEntity> ticketOptional = ticketRepository.findByQrCode(qrCode);
         if (ticketOptional.isEmpty()) {
-            return new TicketScanResponse(
-                    "invalid",
-                    "No ticket matches the scanned code.",
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    gate,
-                    0,
-                    false,
-                    scannedAt,
-                    null
-            );
+            return buildInvalidResponse("No ticket matches the scanned code.", gate, scannedAt);
         }
 
-        TicketEntity ticket = ticketOptional.get();
+        return processTicketEntry(ticketOptional.get(), gate, scannedAt);
+    }
+
+    @Transactional
+    public TicketScanResponse verifyTicketManually(ManualTicketVerificationRequest request) {
+        Objects.requireNonNull(request, "Manual ticket verification request must not be null");
+
+        String gate = normaliseGate(request.gate());
+        LocalDateTime scannedAt = LocalDateTime.now();
+        return verifyTicketByNumberInternal(request, gate, scannedAt);
+    }
+
+    @Transactional
+    public BulkCheckInResponse bulkCheckIn(BulkCheckInRequest request) {
+        Objects.requireNonNull(request, "Bulk check-in request must not be null");
+
+        List<String> ticketNumbers = ManualTicketVerificationRequest.normaliseTicketNumbers(request);
+        if (ticketNumbers.isEmpty()) {
+            return new BulkCheckInResponse(0, 0, 0, 0, List.of());
+        }
+
+        String gate = normaliseGate(request.gate());
+        List<TicketScanResponse> results = new ArrayList<>();
+        int successful = 0;
+        int duplicates = 0;
+        int invalid = 0;
+
+        for (String ticketNumber : ticketNumbers) {
+            ManualTicketVerificationRequest singleRequest = ManualTicketVerificationRequest.fromBulk(ticketNumber, request);
+            TicketScanResponse response = verifyTicketByNumberInternal(singleRequest, gate, LocalDateTime.now());
+            results.add(response);
+
+            String status = Optional.ofNullable(response.status()).orElse("").toLowerCase();
+            if (status.equals(STATUS_VALID)) {
+                successful++;
+            } else if (status.equals(STATUS_DUPLICATE)) {
+                duplicates++;
+            } else {
+                invalid++;
+            }
+        }
+
+        return new BulkCheckInResponse(results.size(), successful, duplicates, invalid, results);
+    }
+
+    private TicketScanResponse verifyTicketByNumberInternal(ManualTicketVerificationRequest request,
+                                                            String gate,
+                                                            LocalDateTime scannedAt) {
+        Long ticketId = extractTicketId(request.ticketNumber());
+        if (ticketId == null) {
+            return buildInvalidResponse("Ticket number is invalid.", gate, scannedAt);
+        }
+
+        TicketEntity ticket = ticketRepository.findById(ticketId).orElse(null);
+        if (ticket == null) {
+            return buildInvalidResponse("Ticket number not found.", gate, scannedAt);
+        }
+
+        EventEntity event = ticket.getEvent();
+        if (event == null) {
+            return buildInvalidResponse("Ticket is not linked to an event.", gate, scannedAt);
+        }
+
+        if (request.eventId() != null && !event.getEventID().equals(request.eventId())) {
+            return buildInvalidResponse("Ticket belongs to a different event.", gate, scannedAt);
+        }
+
+        return processTicketEntry(ticket, gate, scannedAt);
+    }
+
+    private String normaliseGate(String gate) {
+        return Optional.ofNullable(gate)
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .orElse("Main Gate");
+    }
+
+    private TicketScanResponse buildInvalidResponse(String message, String gate, LocalDateTime scannedAt) {
+        return new TicketScanResponse(
+            STATUS_INVALID,
+                message,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                gate,
+                0,
+                false,
+                scannedAt,
+                null
+        );
+    }
+
+    private TicketScanResponse processTicketEntry(TicketEntity ticket, String gate, LocalDateTime scannedAt) {
+        AttendanceLogEntity latestLog = attendanceLogRepository
+                .findTopByTicket_TicketIDOrderByStartTimeDesc(ticket.getTicketID())
+                .orElse(null);
 
         boolean alreadyCheckedIn = Optional.ofNullable(ticket.getStatus())
                 .map(status -> status.equalsIgnoreCase("CHECKED_IN") || status.equalsIgnoreCase("USED"))
                 .orElse(false);
-
-        AttendanceLogEntity latestLog = attendanceLogRepository
-                .findTopByTicket_TicketIDOrderByStartTimeDesc(ticket.getTicketID())
-                .orElse(null);
 
         AttendanceLogEntity logEntry = new AttendanceLogEntity();
         logEntry.setTicket(ticket);
@@ -166,19 +251,19 @@ public class TicketService {
         String message;
 
         if (alreadyCheckedIn) {
-            status = "duplicate";
+            status = STATUS_DUPLICATE;
             message = "Ticket was already checked in.";
             int previousReEntry = Optional.ofNullable(latestLog)
                     .map(AttendanceLogEntity::getReEntry)
                     .orElse(0);
             reEntryCount = previousReEntry + 1;
-            logEntry.setStatus("duplicate");
+            logEntry.setStatus(STATUS_DUPLICATE);
             logEntry.setReEntry(reEntryCount);
         } else {
-            status = "valid";
+            status = STATUS_VALID;
             message = "Ticket verified successfully.";
             reEntryCount = 0;
-            logEntry.setStatus("valid");
+            logEntry.setStatus(STATUS_VALID);
             logEntry.setReEntry(reEntryCount);
             ticket.setStatus("CHECKED_IN");
             ticketRepository.save(ticket);
@@ -186,23 +271,49 @@ public class TicketService {
 
         attendanceLogRepository.save(logEntry);
 
+        EventEntity event = ticket.getEvent();
+        UserEntity attendee = ticket.getUser();
+
         return new TicketScanResponse(
                 status,
                 message,
                 ticket.getTicketID(),
-                ticket.getEvent().getEventID(),
+                event != null ? event.getEventID() : null,
                 formatTicketNumber(ticket),
-                ticket.getUser().getName(),
-                ticket.getUser().getEmail(),
-                ticket.getEvent().getName(),
-                ticket.getEvent().getStartDate(),
-                ticket.getEvent().getEndDate(),
+                attendee != null ? attendee.getName() : "",
+                attendee != null ? attendee.getEmail() : "",
+                event != null ? event.getName() : "",
+                event != null ? event.getStartDate() : null,
+                event != null ? event.getEndDate() : null,
                 gate,
                 reEntryCount,
                 alreadyCheckedIn,
                 scannedAt,
                 Optional.ofNullable(latestLog).map(AttendanceLogEntity::getStartTime).orElse(null)
         );
+    }
+
+    private Long extractTicketId(String ticketNumber) {
+        if (ticketNumber == null) {
+            return null;
+        }
+        String trimmed = ticketNumber.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        String[] parts = trimmed.split("-");
+        String numericSegment = parts[parts.length - 1].replaceAll("\\D", "");
+        if (numericSegment.isEmpty()) {
+            return null;
+        }
+
+        try {
+            long id = Long.parseLong(numericSegment);
+            return id > 0 ? id : null;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private String formatTicketNumber(TicketEntity ticket) {
