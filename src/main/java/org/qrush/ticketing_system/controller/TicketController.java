@@ -1,6 +1,9 @@
 package org.qrush.ticketing_system.controller;
 
 import org.qrush.ticketing_system.dto.BookTicketRequest;
+import org.qrush.ticketing_system.dto.BulkCheckInRequest;
+import org.qrush.ticketing_system.dto.BulkCheckInResponse;
+import org.qrush.ticketing_system.dto.ManualTicketVerificationRequest;
 import org.qrush.ticketing_system.dto.TicketScanRequest;
 import org.qrush.ticketing_system.dto.TicketScanResponse;
 import org.qrush.ticketing_system.entity.TicketEntity;
@@ -43,6 +46,16 @@ public class TicketController {
     @PostMapping("/scan")
     public TicketScanResponse scanTicket(@RequestBody TicketScanRequest request) {
         return ticketService.scanTicket(request);
+    }
+
+    @PostMapping("/manual-verify")
+    public TicketScanResponse verifyTicketManually(@RequestBody ManualTicketVerificationRequest request) {
+        return ticketService.verifyTicketManually(request);
+    }
+
+    @PostMapping("/bulk-check-in")
+    public BulkCheckInResponse bulkCheckIn(@RequestBody BulkCheckInRequest request) {
+        return ticketService.bulkCheckIn(request);
     }
 
     @PutMapping("/{id}")
