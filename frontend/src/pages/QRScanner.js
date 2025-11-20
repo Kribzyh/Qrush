@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { Button } from '../components/ui/button';
@@ -14,72 +14,178 @@ import {
   User
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiService } from '../services/api';
 
 const QRScanner = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [isScanning, setIsScanning] = useState(false);
   const [scannedData, setScannedData] = useState(null);
+  const [cameraError, setCameraError] = useState(null);
+  const [barcodeSupported, setBarcodeSupported] = useState(() => typeof window !== 'undefined' && 'BarcodeDetector' in window);
+  const [scannerMessage, setScannerMessage] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const frameRef = useRef(null);
+  const lastScannedCodeRef = useRef(null);
 
-  // Mock QR code scanning simulation
-  const simulateQRScan = () => {
-    const mockTickets = [
-      {
-        ticketNumber: "TC2024-001234",
-        attendeeName: "John Smith",
-        email: "john@example.com",
-        eventTitle: "Tech Conference 2024",
-        status: "valid",
-        gate: "Main Entrance",
-        seat: "A-15"
-      },
-      {
-        ticketNumber: "TC2024-002345",
-        attendeeName: "Sarah Johnson",
-        email: "sarah@example.com",
-        eventTitle: "Tech Conference 2024",
-        status: "valid",
-        gate: "Main Entrance",
-        seat: "B-22"
-      },
-      {
-        ticketNumber: "TC2024-003456",
-        attendeeName: "Mike Wilson",
-        email: "mike@example.com",
-        eventTitle: "Tech Conference 2024",
-        status: "duplicate",
-        gate: "Side Entrance",
-        seat: "C-08",
-        lastScanned: new Date(Date.now() - 1800000)
-      },
-      {
-        ticketNumber: "INVALID-001",
-        status: "invalid"
-      }
-    ];
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setBarcodeSupported('BarcodeDetector' in window);
+    }
+  }, []);
 
-    // Simulate scanning delay
-    setTimeout(() => {
-      const randomTicket = mockTickets[Math.floor(Math.random() * mockTickets.length)];
-      setScannedData(randomTicket);
-      setIsScanning(false);
+  useEffect(() => {
+    if (!barcodeSupported) {
+      setScannerMessage('Automatic QR detection is not supported in this browser. Use manual verification if needed.');
+    }
+  }, [barcodeSupported]);
 
-      // Show toast notification
-      if (randomTicket.status === 'valid') {
-        toast.success(`Welcome ${randomTicket.attendeeName}! Ticket verified successfully.`);
-      } else if (randomTicket.status === 'duplicate') {
-        toast.error(`Duplicate scan detected for ${randomTicket.attendeeName}`);
+  const stopScanning = useCallback(() => {
+    setIsScanning(false);
+    setIsProcessing(false);
+    if (barcodeSupported) {
+      setScannerMessage('');
+    }
+    if (frameRef.current) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    lastScannedCodeRef.current = null;
+  }, [barcodeSupported]);
+
+  useEffect(() => () => {
+    stopScanning();
+  }, [stopScanning]);
+
+  const handleDetectedCode = useCallback(async (code) => {
+    if (!code || isProcessing || code === lastScannedCodeRef.current) {
+      return;
+    }
+
+    lastScannedCodeRef.current = code;
+    setIsProcessing(true);
+    setScannerMessage('');
+
+    try {
+      const response = await apiService.scanTicket({
+        qrCode: code,
+        staffUserId: user?.id ?? null,
+        gate: 'Main Gate'
+      });
+
+      const normalized = {
+        ...response,
+        scannedAt: response?.scannedAt ? new Date(response.scannedAt) : null,
+        previousScanAt: response?.previousScanAt ? new Date(response.previousScanAt) : null
+      };
+
+      setScannedData(normalized);
+
+      const status = (response?.status || '').toLowerCase();
+      if (status === 'valid') {
+        toast.success(response?.message || 'Ticket verified successfully.');
+      } else if (status === 'duplicate') {
+        toast.warning(response?.message || 'Duplicate scan detected.');
       } else {
-        toast.error('Invalid ticket detected');
+        toast.error(response?.message || 'Invalid ticket detected.');
       }
-    }, 2000);
-  };
+    } catch (error) {
+      console.error('Ticket scan failed', error);
+      setScannerMessage('Unable to validate ticket. Please try again.');
+      toast.error('Unable to validate ticket. Please try again.');
+    } finally {
+      setIsProcessing(false);
+      stopScanning();
+    }
+  }, [isProcessing, stopScanning, user?.id]);
 
-  const startScanning = () => {
-    setIsScanning(true);
-    setScannedData(null);
-    simulateQRScan();
-  };
+  const startScanning = useCallback(async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError('Camera access is not supported on this device.');
+      return;
+    }
+
+    try {
+      setCameraError(null);
+      setScannerMessage('');
+      setScannedData(null);
+      setIsProcessing(false);
+      lastScannedCodeRef.current = null;
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+        audio: false
+      });
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      setIsScanning(true);
+      if (!barcodeSupported) {
+        setScannerMessage('Camera ready. This browser does not support automatic QR detection.');
+      }
+    } catch (error) {
+      console.error('Unable to access camera', error);
+      setCameraError('Unable to access the camera. Please check permissions and try again.');
+      stopScanning();
+    }
+  }, [barcodeSupported, stopScanning]);
+
+  useEffect(() => {
+    if (!isScanning || !barcodeSupported) {
+      return;
+    }
+
+    let cancelled = false;
+    const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+
+    const detect = async () => {
+      if (cancelled) {
+        return;
+      }
+
+      if (!videoRef.current || videoRef.current.readyState < 2) {
+        frameRef.current = requestAnimationFrame(detect);
+        return;
+      }
+
+      try {
+        const barcodes = await detector.detect(videoRef.current);
+        if (barcodes.length > 0) {
+          const code = barcodes[0].rawValue || barcodes[0].displayValue;
+          await handleDetectedCode(code);
+          return;
+        }
+      } catch (error) {
+        console.error('Barcode detection failed', error);
+        setScannerMessage('Scanning error. Please steady the camera and try again.');
+      }
+
+      frameRef.current = requestAnimationFrame(detect);
+    };
+
+    frameRef.current = requestAnimationFrame(detect);
+
+    return () => {
+      cancelled = true;
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+    };
+  }, [barcodeSupported, handleDetectedCode, isScanning]);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -99,7 +205,14 @@ const QRScanner = () => {
     }
   };
 
-  const formatTime = (date) => {
+  const formatTime = (value) => {
+    if (!value) {
+      return '--:--';
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '--:--';
+    }
     return date.toLocaleString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
@@ -107,6 +220,11 @@ const QRScanner = () => {
       day: 'numeric'
     });
   };
+
+  const scannedStatus = scannedData ? (scannedData.status || 'invalid').toLowerCase() : null;
+  const scannedGate = scannedData?.gate || 'Main Gate';
+  const scannedAtLabel = scannedData ? formatTime(scannedData.scannedAt) : null;
+  const previousScanLabel = scannedData ? formatTime(scannedData.previousScanAt) : null;
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -142,46 +260,68 @@ const QRScanner = () => {
                   </p>
                 </div>
 
+                {cameraError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 flex items-start space-x-2">
+                    <AlertTriangle className="w-4 h-4 mt-0.5" />
+                    <span>{cameraError}</span>
+                  </div>
+                )}
+
                 <Button
                   onClick={startScanning}
                   className="gradient-orange text-white text-lg px-8 py-4 h-auto"
+                  disabled={isProcessing}
                 >
                   <Camera className="w-6 h-6 mr-3" />
                   Start Camera
                 </Button>
 
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-500 space-y-1">
                   <p>Logged in as: <strong>{user.name}</strong></p>
                   <p>Gate: Main Entrance</p>
+                  {scannerMessage && (
+                    <p className="text-xs text-gray-500">{scannerMessage}</p>
+                  )}
                 </div>
               </div>
             ) : (
-              <div className="text-center space-y-6">
-                <div className="w-32 h-32 bg-gray-100 rounded-full flex items-center justify-center mx-auto animate-pulse">
-                  <Camera className="w-16 h-16 text-gray-400" />
-                </div>
-                
-                <div>
-                  <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-                    Scanning...
-                  </h2>
-                  <p className="text-gray-600">
-                    Point your camera at the QR code
-                  </p>
+              <div className="space-y-6">
+                <div className="max-w-md mx-auto w-full">
+                  <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-black shadow-inner">
+                    <video
+                      ref={videoRef}
+                      className="w-full h-full object-cover"
+                      muted
+                      playsInline
+                      autoPlay
+                    />
+                    {isProcessing && (
+                      <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center space-y-2 text-white">
+                        <Camera className="w-10 h-10 animate-pulse" />
+                        <span className="text-sm">Processing scan...</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-center space-x-2">
-                  <div className="w-2 h-2 bg-orange-500 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-orange-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                  <div className="w-2 h-2 bg-orange-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                <div className="text-center space-y-2">
+                  <h2 className="text-2xl font-semibold text-gray-900">Align QR Code</h2>
+                  <p className="text-gray-600">Hold the QR code steady within the frame.</p>
+                  {scannerMessage && (
+                    <p className="text-sm text-gray-500">{scannerMessage}</p>
+                  )}
+                  {!barcodeSupported && (
+                    <p className="text-sm text-orange-600">
+                      Automatic detection is not supported in this browser. Use manual check if needed.
+                    </p>
+                  )}
                 </div>
 
-                <Button
-                  onClick={() => setIsScanning(false)}
-                  variant="outline"
-                >
-                  Cancel Scan
-                </Button>
+                <div className="flex justify-center gap-3">
+                  <Button variant="outline" onClick={stopScanning}>
+                    Stop Camera
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
@@ -189,71 +329,92 @@ const QRScanner = () => {
 
         {/* Scan Result */}
         {scannedData && (
-          <Card className={`border-2 ${getStatusColor(scannedData.status)}`}>
+          <Card className={`border-2 ${getStatusColor(scannedStatus || 'invalid')}`}>
             <CardContent className="p-6">
               <div className="flex items-start space-x-4">
                 <div className="flex-shrink-0">
-                  {getStatusIcon(scannedData.status)}
+                  {getStatusIcon(scannedStatus || 'invalid')}
                 </div>
                 
                 <div className="flex-1 space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xl font-semibold text-gray-900">
-                      {scannedData.status === 'valid' ? 'Valid Ticket' : 
-                       scannedData.status === 'duplicate' ? 'Duplicate Scan' : 
-                       'Invalid Ticket'}
+                      {scannedStatus === 'valid' ? 'Valid Ticket'
+                        : scannedStatus === 'duplicate' ? 'Duplicate Scan'
+                        : 'Invalid Ticket'}
                     </h3>
-                    <Badge className={getStatusColor(scannedData.status)}>
-                      {scannedData.status.toUpperCase()}
+                    <Badge className={getStatusColor(scannedStatus || 'invalid')}>
+                      {(scannedStatus || 'invalid').toUpperCase()}
                     </Badge>
                   </div>
 
-                  {scannedData.status !== 'invalid' && (
+                  <p className="text-sm text-gray-600">{scannedData.message}</p>
+
+                  {scannedStatus !== 'invalid' && (
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <p className="text-gray-600">Attendee</p>
                           <p className="font-semibold text-gray-900 flex items-center">
                             <User className="w-4 h-4 mr-2 text-orange-500" />
-                            {scannedData.attendeeName}
+                            {scannedData.attendeeName || 'Guest'}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-gray-600">Email</p>
+                          <p className="font-semibold text-gray-900 break-words">
+                            {scannedData.attendeeEmail || '—'}
                           </p>
                         </div>
                         
                         <div>
                           <p className="text-gray-600">Ticket Number</p>
                           <p className="font-mono font-semibold text-gray-900">
-                            {scannedData.ticketNumber}
+                            {scannedData.ticketNumber || '—'}
                           </p>
                         </div>
                         
                         <div>
                           <p className="text-gray-600">Event</p>
                           <p className="font-semibold text-gray-900">
-                            {scannedData.eventTitle}
+                            {scannedData.eventTitle || 'Event TBD'}
                           </p>
                         </div>
                         
                         <div>
-                          <p className="text-gray-600">Seat</p>
+                          <p className="text-gray-600">Gate</p>
                           <p className="font-semibold text-gray-900">
-                            {scannedData.seat}
+                            {scannedGate}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-gray-600">Scanned At</p>
+                          <p className="font-semibold text-gray-900">
+                            {scannedAtLabel}
                           </p>
                         </div>
                       </div>
 
-                      {scannedData.status === 'duplicate' && scannedData.lastScanned && (
+                      {scannedStatus === 'duplicate' && previousScanLabel !== '--:--' && (
                         <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                           <div className="flex items-center space-x-2 text-red-700">
                             <AlertTriangle className="w-4 h-4" />
                             <span className="font-semibold">Already scanned</span>
                           </div>
                           <p className="text-sm text-red-600 mt-1">
-                            Last scanned: {formatTime(scannedData.lastScanned)}
+                            Last scanned: {previousScanLabel}
                           </p>
+                          {typeof scannedData.reEntryCount === 'number' && (
+                            <p className="text-xs text-red-500 mt-1">
+                              Re-entry attempts: {Math.max(scannedData.reEntryCount, 1)}
+                            </p>
+                          )}
                         </div>
                       )}
 
-                      {scannedData.status === 'valid' && (
+                      {scannedStatus === 'valid' && (
                         <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                           <div className="flex items-center space-x-2 text-green-700">
                             <CheckCircle className="w-4 h-4" />
@@ -267,7 +428,7 @@ const QRScanner = () => {
                     </div>
                   )}
 
-                  {scannedData.status === 'invalid' && (
+                  {scannedStatus === 'invalid' && (
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                       <div className="flex items-center space-x-2 text-gray-700">
                         <AlertTriangle className="w-4 h-4" />
