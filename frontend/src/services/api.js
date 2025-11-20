@@ -112,6 +112,13 @@ class ApiService {
     return this.request(`/tickets/${ticketId}`);
   }
 
+  async scanTicket(payload) {
+    return this.request('/tickets/scan', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async getAttendeeDashboard(userId) {
     return this.request(`/dashboard/attendee/${userId}`);
   }
