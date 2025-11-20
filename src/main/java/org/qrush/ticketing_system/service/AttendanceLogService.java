@@ -40,6 +40,7 @@ public class AttendanceLogService {
             log.setStartTime(updatedLog.getStartTime());
             log.setStatus(updatedLog.getStatus());
             log.setReEntry(updatedLog.getReEntry());
+            log.setGate(updatedLog.getGate());
             return attendanceLogRepository.save(log);
         }).orElseThrow(() -> new RuntimeException("Log not found with ID: " + id));
     }
