@@ -32,6 +32,9 @@ public class AttendanceLogEntity {
     @Column(name = "re_entry")
     private Integer reEntry;
 
+    @Column(name = "gate")
+    private String gate;
+
     // Getters and Setters
     public Long getLogID() {
         return logID;
@@ -87,5 +90,13 @@ public class AttendanceLogEntity {
 
     public void setReEntry(Integer reEntry) {
         this.reEntry = reEntry;
+    }
+
+    public String getGate() {
+        return gate;
+    }
+
+    public void setGate(String gate) {
+        this.gate = gate;
     }
 }
