@@ -119,6 +119,20 @@ class ApiService {
     });
   }
 
+  async manualVerifyTicket(payload) {
+    return this.request('/tickets/manual-verify', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async bulkCheckIn(payload) {
+    return this.request('/tickets/bulk-check-in', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async getAttendeeDashboard(userId) {
     return this.request(`/dashboard/attendee/${userId}`);
   }
