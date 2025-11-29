@@ -60,6 +60,9 @@ public class EventEntity {
     @Column(name = "view_count", nullable = false)
     private Long views = 0L;
 
+    @Column(name = "tickets_sold", nullable = false)
+    private Integer ticketsSold = 0;
+
     // Getters and Setters
     public Long getEventID() {
         return eventID;
@@ -195,5 +198,13 @@ public class EventEntity {
 
     public void setViews(Long views) {
         this.views = views;
+    }
+
+    public Integer getTicketsSold() {
+        return ticketsSold;
+    }
+
+    public void setTicketsSold(Integer ticketsSold) {
+        this.ticketsSold = ticketsSold;
     }
 }

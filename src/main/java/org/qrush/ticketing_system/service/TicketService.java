@@ -62,6 +62,7 @@ public class TicketService {
         return ticketRepository.save(Objects.requireNonNull(ticket, "Ticket must not be null"));
     }
 
+    @Transactional
     public List<TicketEntity> bookTickets(BookTicketRequest request) {
         Objects.requireNonNull(request, "Ticket booking request must not be null");
         Long userId = Objects.requireNonNull(request.getUserId(), USER_ID_REQUIRED);
@@ -74,13 +75,28 @@ public class TicketService {
                 .orElseThrow(() -> new IllegalArgumentException("Event not found with ID: " + eventId));
 
         int quantity = Math.max(1, request.getQuantity());
-        String ticketType = Optional.ofNullable(request.getTicketType()).filter(type -> !type.isBlank())
+        String ticketType = Optional.ofNullable(request.getTicketType())
+                .filter(type -> !type.isBlank())
                 .orElse("REGULAR");
 
-        return IntStream.range(0, quantity)
-            .mapToObj(index -> createTicketEntity(user, event, ticketType))
-            .map(ticketRepository::save)
-            .toList();
+        // Check if enough tickets are available
+        int ticketsSold = event.getTicketsSold() != null ? event.getTicketsSold() : 0;
+        if (ticketsSold + quantity > event.getCapacity()) {
+            throw new IllegalStateException("Not enough tickets available");
+        }
+
+        // Increment tickets sold and save event
+        event.setTicketsSold(ticketsSold + quantity);
+        eventRepository.save(event);
+
+        // Create tickets
+        List<TicketEntity> bookedTickets = new ArrayList<>();
+        for (int i = 0; i < quantity; i++) {
+            TicketEntity ticket = createTicketEntity(user, event, ticketType);
+            bookedTickets.add(ticketRepository.save(ticket));
+        }
+
+        return bookedTickets;
     }
 
     private TicketEntity createTicketEntity(UserEntity user, EventEntity event, String ticketType) {
