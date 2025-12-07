@@ -89,8 +89,9 @@ class ApiService {
   }
 
   async getEvent(eventId, options = {}) {
-    const { trackView = true } = options;
-    const query = trackView ? '' : '?trackView=false';
+    const { trackView = false } = options;
+    
+    const query = trackView ? '?trackView=true' : '?trackView=false';
     return this.request(`/events/${eventId}${query}`);
   }
 

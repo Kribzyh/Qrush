@@ -23,7 +23,7 @@ public class EventController {
 
     @GetMapping("/{id}")
     public EventEntity getEventById(@PathVariable Long id,
-                                    @RequestParam(name = "trackView", defaultValue = "true") boolean trackView) {
+                                    @RequestParam(name = "trackView", defaultValue = "false") boolean trackView) {
         if (trackView) {
             return eventService.getEventByIdAndIncrementViews(id);
         }

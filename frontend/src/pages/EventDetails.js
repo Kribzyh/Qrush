@@ -1,5 +1,5 @@
 /* global globalThis */
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { Button } from '../components/ui/button';
@@ -338,6 +338,7 @@ const EventDetails = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [ticketQuantity, setTicketQuantity] = useState(1);
+  const hasFetched = useRef(false);
 
   const getStoredOrganizerProfile = useCallback(() => {
     try {
@@ -357,11 +358,16 @@ const EventDetails = () => {
   }, [user?.id]);
 
   useEffect(() => {
+    // Prevent duplicate calls in React StrictMode during development
+    if (hasFetched.current) {
+      return;
+    }
+
     const loadEvent = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await apiService.getEvent(id);
+        const response = await apiService.getEvent(id, { trackView: true });  
         const storedProfile = getStoredOrganizerProfile();
         const mapped = mapEventResponse(response, storedProfile, user);
         if (!mapped) {
@@ -377,6 +383,7 @@ const EventDetails = () => {
       }
     };
 
+    hasFetched.current = true;
     loadEvent();
   }, [getStoredOrganizerProfile, id, user]);
 
